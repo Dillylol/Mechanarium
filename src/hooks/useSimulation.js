@@ -46,9 +46,14 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   useEffect(() => {
     if (!running) return undefined
     let frameId
-    let previous = performance.now()
+    let previous
     const frame = (now) => {
-      const elapsed = Math.min((now - previous) / 1000, 0.1) * speed
+      if (previous === undefined) {
+        previous = now
+        frameId = requestAnimationFrame(frame)
+        return
+      }
+      const elapsed = Math.min(Math.max((now - previous) / 1000, 0), 0.1) * speed
       previous = now
       let next = worldRef.current
       clockRef.current.advance(elapsed, (dt) => { next = stepWorld(next, dt) })

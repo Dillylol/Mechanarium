@@ -12,7 +12,7 @@ Scenario tests cover version validation, invalid references, malformed JSON, rou
 
 ### Interface component tests
 
-Testing Library exercises the three-dimensional studio shell, builder tools, prepared labs, deterministic stepping, body-property editing, local save, independent overlays, and natural-language world-building fallback.
+Testing Library exercises the three-dimensional studio shell, builder tools, prepared labs, deterministic stepping, continuous Run playback across animation timestamp origins, body-property editing, local save, independent overlays, and natural-language world-building fallback.
 
 ### Running-browser validation
 
@@ -24,16 +24,17 @@ The local production-shaped application was exercised in the browser on 2026-07-
 - switching to Spring Oscillator reset the selected body correctly;
 - adding a second body selected and exposed its inspector;
 - editing body mass accepted `2.5 kg`;
-- run transitioned to pause and advanced live time;
+- run transitioned to pause and advanced live time from `0.000 s` to `0.533 s`, moving the projectile from `(-6.0, 2.0)` to `(-2.9, 4.4)`;
+- pause held simulation time and reset restored the initial state;
 - Three.js world, overlay controls, builder rail, agent dock, inspector inputs, telemetry chart, and accessible body table were present;
-- no browser console errors or warnings were recorded.
+- no new browser console errors or warnings were recorded after the playback repair.
 
 ## Latest quality gate
 
 Run on 2026-07-18:
 
 - lint: passed
-- automated tests: 27 passed across 9 files
+- automated tests: 28 passed across 9 files
 - production build: passed
 - coverage: 74.34% statements, 63.11% branches, 70.37% functions, 79.82% lines
 

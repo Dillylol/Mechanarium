@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import App from './App.jsx'
 
 describe('Mechanarium studio', () => {
@@ -37,6 +37,27 @@ describe('Mechanarium studio', () => {
     const vectors = screen.getByRole('checkbox', { name: 'vectors' })
     await user.click(vectors)
     expect(vectors).not.toBeChecked()
+  })
+
+  it('runs when animation frames use a different timestamp origin', async () => {
+    const callbacks = []
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callbacks.push(callback)
+      return callbacks.length
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Run' }))
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled()
+    act(() => callbacks.shift()(10))
+    act(() => callbacks.shift()(30))
+    expect(screen.getByText('0.017 s')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Pause' }))
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
   })
 
   it('edits the selected body and saves the world locally', async () => {
