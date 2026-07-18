@@ -1,0 +1,55 @@
+import { useState } from 'react'
+import { Box, Circle, Gauge, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
+
+const elements = [
+  { id: 'sphere', label: 'Sphere', icon: Circle },
+  { id: 'box', label: 'Block', icon: Box },
+  { id: 'ramp', label: 'Ramp', icon: Triangle },
+  { id: 'floor', label: 'Floor', icon: Minus },
+  { id: 'spring', label: 'Spring', icon: Waves },
+  { id: 'gravity', label: 'Gravity', icon: Orbit },
+]
+
+const instruments = [
+  { label: 'Photogate', icon: Gauge },
+  { label: 'Ruler', icon: Ruler },
+]
+
+export default function BuilderRail({ presets, activePreset, onAddElement, onLoadPreset }) {
+  const [tab, setTab] = useState('build')
+  return (
+    <aside className="builder-rail" aria-labelledby="builder-title">
+      <div className="rail-tabs" role="tablist" aria-label="World builder sections">
+        <button type="button" role="tab" aria-selected={tab === 'build'} onClick={() => setTab('build')}><SlidersHorizontal size={15} />Build</button>
+        <button type="button" role="tab" aria-selected={tab === 'labs'} onClick={() => setTab('labs')}><Sparkles size={15} />Labs</button>
+      </div>
+
+      {tab === 'build' ? (
+        <div className="rail-content">
+          <div className="panel-intro"><p className="micro-label">World builder</p><h1 id="builder-title">Elements</h1><p>Place a component, then position it directly in the world.</p></div>
+          <div className="element-grid">
+            {elements.map(({ id, label, icon: Icon }) => (
+              <button key={id} type="button" onClick={() => onAddElement(id)} aria-label={`Add ${label}`}><Icon size={22} strokeWidth={1.6} /><span>{label}</span><small>+</small></button>
+            ))}
+          </div>
+          <div className="rail-section-heading"><span>Lab instruments</span><small>preview</small></div>
+          <div className="instrument-list">
+            {instruments.map(({ label, icon: Icon }) => <button key={label} type="button" disabled><Icon size={17} /><span>{label}</span><small>soon</small></button>)}
+          </div>
+          <div className="builder-note"><strong>Direct manipulation</strong><p>Select a body to inspect it. Drag it while paused; drag open space to orbit the camera.</p></div>
+        </div>
+      ) : (
+        <div className="rail-content">
+          <div className="panel-intro"><p className="micro-label">Prepared systems</p><h1 id="builder-title">Experiments</h1><p>Start with a known phenomenon, then alter its assumptions.</p></div>
+          <nav className="experiment-list" aria-label="Prepared physics experiments">
+            {presets.map((preset, index) => (
+              <button key={preset.id} type="button" className={activePreset === preset.id ? 'active' : ''} onClick={() => onLoadPreset(preset.id)}>
+                <span>{String(index + 1).padStart(2, '0')}</span><div><strong>{preset.name}</strong><small>{preset.category}</small></div>
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+    </aside>
+  )
+}

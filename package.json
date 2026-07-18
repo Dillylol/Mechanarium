@@ -7,7 +7,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --kill-others --names web,agent --prefix-colors black,gray \"npm:dev:web\" \"npm:dev:agent\"",
+    "dev:web": "vite",
+    "dev:agent": "node --watch server/agent.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
@@ -18,10 +20,13 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^10.0.3",
     "lucide-react": "^0.468.0",
-    "vite": "^8.0.10",
+    "openai": "^6.48.0",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "three": "^0.185.1",
+    "vite": "^8.0.10"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

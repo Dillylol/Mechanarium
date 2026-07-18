@@ -116,6 +116,74 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     })
   }, [commitScenarioEdit])
 
+  const applyActions = useCallback((actions) => {
+    const presetAction = actions.find((action) => action.type === 'load_preset')
+    if (presetAction?.target) {
+      loadPreset(presetAction.target)
+      return
+    }
+
+    const generatedIds = actions.map((_, index) => `builder-${Date.now()}-${index}`)
+    commitScenarioEdit((scenario) => {
+      actions.forEach((action, index) => {
+        if (action.type === 'add_body') {
+          const isBox = action.target === 'box'
+          scenario.bodies.push(createBody({
+            id: generatedIds[index],
+            name: action.name || (isBox ? 'Block' : 'Sphere'),
+            shape: isBox ? 'box' : 'circle',
+            radius: isBox ? 0.55 : 0.42,
+            width: isBox ? 1.1 : 0.84,
+            height: isBox ? 1.1 : 0.84,
+            position: { x: action.x ?? 0, y: action.y ?? 2.5 },
+            color: isBox ? '#111111' : '#f2cf00',
+          }))
+        }
+
+        if (action.type === 'add_constraint' && action.target === 'ramp') {
+          scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'incline')
+          scenario.constraints.push({ id: generatedIds[index], type: 'incline', start: { x: -4.5, y: 2.8 }, end: { x: 4.5, y: -2.2 }, rolling: true })
+        }
+
+        if (action.type === 'add_constraint' && action.target === 'floor') {
+          scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'ground')
+          scenario.constraints.push({ id: generatedIds[index], type: 'ground', y: -3.6, restitution: 0.72, friction: 0.04 })
+        }
+
+        if (action.type === 'add_force' && action.target === 'gravity') {
+          const gravity = scenario.forces.find((force) => force.type === 'gravity' && !force.bodyId)
+          if (gravity) gravity.g = action.value ?? 9.80665
+          else scenario.forces.push({ id: generatedIds[index], type: 'gravity', g: action.value ?? 9.80665 })
+        }
+
+        if (action.type === 'add_force' && action.target === 'spring') {
+          const bodyId = selectedRef.current ?? scenario.bodies[0]?.id
+          const body = scenario.bodies.find((candidate) => candidate.id === bodyId)
+          if (body) scenario.forces.push({
+            id: generatedIds[index],
+            type: 'spring',
+            bodyId,
+            anchor: { x: body.position.x - 2.5, y: body.position.y },
+            stiffness: 5,
+            restLength: 1.4,
+            damping: 0.05,
+          })
+        }
+      })
+    })
+    const addedBodyIndex = actions.findIndex((action) => action.type === 'add_body')
+    if (addedBodyIndex >= 0) setSelectedId(generatedIds[addedBodyIndex])
+  }, [commitScenarioEdit, loadPreset])
+
+  const addElement = useCallback((target) => {
+    const type = target === 'sphere' || target === 'box'
+      ? 'add_body'
+      : target === 'ramp' || target === 'floor'
+        ? 'add_constraint'
+        : 'add_force'
+    applyActions([{ type, target }])
+  }, [applyActions])
+
   const selectedBody = useMemo(
     () => world.bodies.find((body) => body.id === selectedId) ?? world.bodies[0],
     [selectedId, world.bodies],
@@ -138,6 +206,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     stepOnce,
     updateBody,
     addBody,
+    addElement,
+    applyActions,
     removeBody,
   }
 }

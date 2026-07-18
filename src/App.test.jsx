@@ -3,59 +3,60 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import App from './App.jsx'
 
-describe('Mechanarium sandbox', () => {
-  it('loads the projectile lab with accessible controls and data', () => {
+describe('Mechanarium studio', () => {
+  it('opens a three-dimensional world with builder, controls, and data', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: 'Projectile Motion' })).toBeInTheDocument()
+    expect(screen.getByRole('application', { name: /three-dimensional physics world/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
-    expect(screen.getByRole('img', { name: /interactive physics world/i })).toBeInTheDocument()
-    expect(screen.getByRole('table')).toHaveTextContent('Projectile')
+    expect(screen.getByRole('complementary', { name: /world data/i })).toHaveTextContent('Total energy')
   })
 
-  it('switches presets and resets the inspector selection', async () => {
+  it('adds world elements from the left builder', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: /Spring Oscillator/i }))
+    await user.click(screen.getByRole('button', { name: 'Add Sphere' }))
+    expect(screen.getByRole('heading', { name: 'Sphere' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toHaveTextContent('Sphere')
+  })
+
+  it('switches to prepared labs and loads an oscillator', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('tab', { name: /Labs/ }))
+    await user.click(screen.getByRole('button', { name: /Spring Oscillator/ }))
     expect(screen.getByRole('heading', { name: 'Spring Oscillator' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Spring mass' })).toBeInTheDocument()
   })
 
-  it('steps deterministically and collects exportable data', async () => {
+  it('advances one deterministic step and toggles overlays', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Step' }))
+    await user.click(screen.getByRole('button', { name: 'Advance one fixed step' }))
     expect(screen.getByText('0.008 s')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Export collected data/i }))
-    expect(screen.getByRole('status')).toHaveTextContent('Telemetry CSV exported')
+    const vectors = screen.getByRole('checkbox', { name: 'vectors' })
+    await user.click(vectors)
+    expect(vectors).not.toBeChecked()
   })
 
-  it('adds a configurable body while paused', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Add body' }))
-    expect(screen.getByRole('heading', { name: 'Body 2' })).toBeInTheDocument()
-    expect(screen.getByRole('table')).toHaveTextContent('Body 2')
-  })
-
-  it('edits body properties and stores a local scenario', async () => {
+  it('edits the selected body and saves the world locally', async () => {
     const user = userEvent.setup()
     render(<App />)
     const mass = screen.getByRole('spinbutton', { name: 'Mass (kg)' })
     await user.clear(mass)
     await user.type(mass, '2.5')
     await user.tab()
-    expect(screen.getByRole('spinbutton', { name: 'Mass (kg)' })).toHaveValue(2.5)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save world locally' }))
     expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"mass": 2.5')
-    expect(screen.getByRole('status')).toHaveTextContent('saved on this device')
+    expect(screen.getByText('Saved on this device')).toBeInTheDocument()
   })
 
-  it('allows visual overlays to be toggled independently', async () => {
+  it('applies a natural-language world-building request through the local fallback', async () => {
     const user = userEvent.setup()
     render(<App />)
-    const vectors = screen.getByRole('checkbox', { name: 'vectors' })
-    expect(vectors).toBeChecked()
-    await user.click(vectors)
-    expect(vectors).not.toBeChecked()
+    await user.type(screen.getByLabelText('Ask the world-building agent'), 'Add a sphere, ramp, floor, and gravity')
+    await user.click(screen.getByRole('button', { name: 'Send world-building request' }))
+    expect(await screen.findByRole('heading', { name: 'Sphere' })).toBeInTheDocument()
+    expect(screen.getByText(/Applied 4 world changes/i)).toBeInTheDocument()
   })
 })

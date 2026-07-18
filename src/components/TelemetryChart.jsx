@@ -14,16 +14,16 @@ export default function TelemetryChart({ history }) {
     if (!context) return
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
     context.clearRect(0, 0, width, height)
-    context.fillStyle = '#0a1625'; context.fillRect(0, 0, width, height)
+    context.fillStyle = '#fafaf7'; context.fillRect(0, 0, width, height)
     if (history.length < 2) {
-      context.fillStyle = '#8196ad'; context.font = '12px Inter, sans-serif'; context.fillText('Run or step the experiment to collect data.', 16, 28)
+      context.fillStyle = '#70706c'; context.font = '11px Inter, sans-serif'; context.fillText('Run or step to collect data.', 12, 24)
       return
     }
     const samples = history.slice(-240)
     const maxEnergy = Math.max(...samples.flatMap((sample) => [Math.abs(sample.kinetic), Math.abs(sample.potential), Math.abs(sample.totalEnergy)]), 1)
     const minEnergy = Math.min(...samples.flatMap((sample) => [sample.kinetic, sample.potential, sample.totalEnergy]), 0)
     const range = Math.max(maxEnergy - minEnergy, 1e-9)
-    const colors = { kinetic: '#78e6d5', potential: '#ff7fa6', totalEnergy: '#ffcf5c' }
+    const colors = { kinetic: '#009d5b', potential: '#b32727', totalEnergy: '#111111' }
     for (const key of Object.keys(colors)) {
       context.strokeStyle = colors[key]; context.lineWidth = key === 'totalEnergy' ? 2.5 : 1.5
       context.beginPath()

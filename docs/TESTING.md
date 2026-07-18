@@ -12,7 +12,7 @@ Scenario tests cover version validation, invalid references, malformed JSON, rou
 
 ### Interface component tests
 
-Testing Library exercises accessible product identity, preset selection, deterministic stepping, data collection/export, body creation, body-property editing, local save, and independent overlay controls.
+Testing Library exercises the three-dimensional studio shell, builder tools, prepared labs, deterministic stepping, body-property editing, local save, independent overlays, and natural-language world-building fallback.
 
 ### Running-browser validation
 
@@ -25,7 +25,7 @@ The local production-shaped application was exercised in the browser on 2026-07-
 - adding a second body selected and exposed its inspector;
 - editing body mass accepted `2.5 kg`;
 - run transitioned to pause and advanced live time;
-- canvas, overlay controls, inspector inputs, telemetry chart, and accessible body table were present;
+- Three.js world, overlay controls, builder rail, agent dock, inspector inputs, telemetry chart, and accessible body table were present;
 - no browser console errors or warnings were recorded.
 
 ## Latest quality gate
@@ -33,7 +33,7 @@ The local production-shaped application was exercised in the browser on 2026-07-
 Run on 2026-07-18:
 
 - lint: passed
-- automated tests: 24 passed across 8 files
+- automated tests: 27 passed across 9 files
 - production build: passed
 - coverage: 74.34% statements, 63.11% branches, 70.37% functions, 79.82% lines
 

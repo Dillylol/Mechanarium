@@ -17,7 +17,7 @@ const presets = [
     category: 'Kinematics',
     description: 'Compare horizontal and vertical motion under uniform gravity.',
     lesson: 'Horizontal velocity remains constant while gravity changes vertical velocity.',
-    bodies: [createBody({ id: 'projectile', name: 'Projectile', position: { x: -6, y: 2 }, velocity: { x: 5.8, y: 7.2 }, color: '#ffb35c' })],
+    bodies: [createBody({ id: 'projectile', name: 'Projectile', position: { x: -6, y: 2 }, velocity: { x: 5.8, y: 7.2 }, color: '#f2cf00' })],
     forces: [{ id: 'earth-gravity', type: 'gravity', g: 9.80665 }],
     constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.72, friction: 0.04 }],
   },
