@@ -11,6 +11,11 @@ describe('local world planner', () => {
     expect(planWorldLocally('Show me an orbit').actions).toEqual([{ type: 'load_preset', target: 'orbital-motion' }])
   })
 
+  it('can remove uniform gravity and add an orbital attractor', () => {
+    expect(planWorldLocally('Turn off gravity').actions[0]).toMatchObject({ type: 'remove_force', target: 'gravity' })
+    expect(planWorldLocally('Add a central force attractor').actions[0]).toMatchObject({ type: 'add_force', target: 'central' })
+  })
+
   it('asks for a supported construction when intent is unclear', () => {
     expect(planWorldLocally('make it interesting').actions).toHaveLength(0)
   })

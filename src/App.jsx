@@ -75,7 +75,7 @@ export default function App() {
       </header>
 
       <main className="studio-layout">
-        <BuilderRail presets={presets} activePreset={world.scenarioId} onAddElement={simulation.addElement} onLoadPreset={simulation.loadPreset} />
+        <BuilderRail presets={presets} activePreset={world.scenarioId} world={world} onAddElement={simulation.addElement} onLoadPreset={simulation.loadPreset} />
 
         <section id="world" className="world-stage" aria-labelledby="world-title">
           <div className="stage-bar">
@@ -90,6 +90,7 @@ export default function App() {
               selectedId={simulation.selectedId}
               onSelect={simulation.setSelectedId}
               onMove={moveBody}
+              onMoveConstraint={simulation.moveConstraint}
               onNudge={nudgeSelected}
               onDelete={() => simulation.removeBody(simulation.selectedId)}
               onToggle={() => simulation.setRunning(!simulation.running)}
@@ -107,6 +108,11 @@ export default function App() {
           history={simulation.history}
           onUpdateBody={updateBody}
           onRemoveBody={() => simulation.removeBody(selectedBody.id)}
+          onUpdateForce={simulation.updateForce}
+          onRemoveForce={simulation.removeForce}
+          onUpdateConstraint={simulation.updateConstraint}
+          onRemoveConstraint={simulation.removeConstraint}
+          onPrepareOrbit={simulation.prepareOrbit}
           onExport={exportData}
           running={simulation.running}
         />

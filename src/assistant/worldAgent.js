@@ -22,13 +22,14 @@ export function planWorldLocally(message) {
   if (/sphere|ball/.test(normalized)) actions.push({ type: 'add_body', target: 'sphere', name: 'Sphere' })
   if (/box|block|cube/.test(normalized)) actions.push({ type: 'add_body', target: 'box', name: 'Block' })
   if (/ramp|incline/.test(normalized)) actions.push({ type: 'add_constraint', target: 'ramp' })
-  if (/floor|ground/.test(normalized)) actions.push({ type: 'add_constraint', target: 'floor' })
+  if (/floor|ground/.test(normalized)) actions.push({ type: /(remove|delete|turn off|disable)/.test(normalized) ? 'remove_constraint' : 'add_constraint', target: 'floor' })
   if (/spring/.test(normalized)) actions.push({ type: 'add_force', target: 'spring' })
-  if (/gravity/.test(normalized)) actions.push({ type: 'add_force', target: 'gravity', value: 9.80665 })
+  if (/gravity/.test(normalized)) actions.push({ type: /(remove|delete|turn off|disable|zero.?g)/.test(normalized) ? 'remove_force' : 'add_force', target: 'gravity', value: 9.80665 })
+  if (/attractor|central force/.test(normalized)) actions.push({ type: 'add_force', target: 'central' })
 
   if (actions.length === 0) {
     return {
-      message: 'I can build with spheres, blocks, ramps, floors, springs, gravity, or load a prepared experiment. What should I place first?',
+      message: 'I can build with spheres, blocks, ramps, floors, springs, gravity, attractors, or load a prepared experiment. What should I place first?',
       actions: [],
       source: 'local',
     }

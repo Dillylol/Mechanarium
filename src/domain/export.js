@@ -6,12 +6,16 @@ const csvCell = (value) => {
 }
 
 export function telemetryToCsv(history) {
-  const columns = ['time_s', 'body', 'x_m', 'y_m', 'speed_m_s', 'kinetic_J', 'potential_J', 'total_energy_J', 'energy_error_percent']
+  const columns = ['time_s', 'body', 'x_m', 'y_m', 'vx_m_s', 'vy_m_s', 'ax_m_s2', 'ay_m_s2', 'speed_m_s', 'kinetic_J', 'potential_J', 'total_energy_J', 'energy_error_percent']
   const rows = history.map((sample) => [
     sample.time,
     sample.body,
     sample.x,
     sample.y,
+    sample.vx,
+    sample.vy,
+    sample.ax,
+    sample.ay,
     sample.speed,
     sample.kinetic,
     sample.potential,

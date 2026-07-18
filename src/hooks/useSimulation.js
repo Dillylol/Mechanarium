@@ -17,6 +17,10 @@ function sampleWorld(world, bodyId) {
     bodyId: body.id,
     x: body.position.x,
     y: body.position.y,
+    vx: body.velocity.x,
+    vy: body.velocity.y,
+    ax: body.acceleration.x,
+    ay: body.acceleration.y,
     speed: magnitude(body.velocity),
     kinetic: world.metrics.translationalKinetic + world.metrics.rotationalKinetic,
     potential: world.metrics.potential,
@@ -127,6 +131,62 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     })
   }, [commitScenarioEdit])
 
+  const updateForce = useCallback((forceId, changes) => {
+    commitScenarioEdit((scenario) => {
+      scenario.forces = scenario.forces.map((force) => force.id === forceId ? { ...force, ...changes } : force)
+    })
+  }, [commitScenarioEdit])
+
+  const removeForce = useCallback((forceId) => {
+    commitScenarioEdit((scenario) => {
+      scenario.forces = scenario.forces.filter((force) => force.id !== forceId)
+    })
+  }, [commitScenarioEdit])
+
+  const updateConstraint = useCallback((constraintId, changes) => {
+    commitScenarioEdit((scenario) => {
+      scenario.constraints = scenario.constraints.map((constraint) => constraint.id === constraintId ? { ...constraint, ...changes } : constraint)
+    })
+  }, [commitScenarioEdit])
+
+  const removeConstraint = useCallback((constraintId) => {
+    commitScenarioEdit((scenario) => {
+      scenario.constraints = scenario.constraints.filter((constraint) => constraint.id !== constraintId)
+    })
+  }, [commitScenarioEdit])
+
+  const moveConstraint = useCallback((constraintId, center) => {
+    commitScenarioEdit((scenario) => {
+      const constraint = scenario.constraints.find((candidate) => candidate.id === constraintId && candidate.type === 'incline')
+      if (!constraint) return
+      const currentCenter = { x: (constraint.start.x + constraint.end.x) / 2, y: (constraint.start.y + constraint.end.y) / 2 }
+      const delta = { x: center.x - currentCenter.x, y: center.y - currentCenter.y }
+      constraint.start = { x: constraint.start.x + delta.x, y: constraint.start.y + delta.y }
+      constraint.end = { x: constraint.end.x + delta.x, y: constraint.end.y + delta.y }
+    })
+  }, [commitScenarioEdit])
+
+  const prepareOrbit = useCallback((forceId) => {
+    commitScenarioEdit((scenario) => {
+      const force = scenario.forces.find((candidate) => candidate.id === forceId && candidate.type === 'central')
+      const body = force && scenario.bodies.find((candidate) => candidate.id === force.bodyId)
+      if (!force || !body) return
+      let dx = body.position.x - force.center.x
+      let dy = body.position.y - force.center.y
+      let radius = Math.hypot(dx, dy)
+      if (radius < 0.5) {
+        radius = 4
+        dx = radius
+        dy = 0
+        body.position = { x: force.center.x + radius, y: force.center.y }
+      }
+      const speed = Math.sqrt(force.strength / radius)
+      body.velocity = { x: (-dy / radius) * speed, y: (dx / radius) * speed }
+      scenario.forces = scenario.forces.filter((candidate) => candidate.type !== 'gravity' || candidate.bodyId)
+      scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'ground')
+    })
+  }, [commitScenarioEdit])
+
   const applyActions = useCallback((actions) => {
     const presetAction = actions.find((action) => action.type === 'load_preset')
     if (presetAction?.target) {
@@ -135,8 +195,18 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     }
 
     const generatedIds = actions.map((_, index) => `builder-${Date.now()}-${index}`)
+    const newBodyIndex = actions.findIndex((action) => action.type === 'add_body')
+    const newBodyId = newBodyIndex >= 0 ? generatedIds[newBodyIndex] : null
     commitScenarioEdit((scenario) => {
       actions.forEach((action, index) => {
+        if (action.type === 'remove_force' && action.target === 'gravity') {
+          scenario.forces = scenario.forces.filter((force) => force.type !== 'gravity' || force.bodyId)
+        }
+
+        if (action.type === 'remove_constraint' && action.target === 'floor') {
+          scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'ground')
+        }
+
         if (action.type === 'add_body') {
           const isBox = action.target === 'box'
           scenario.bodies.push(createBody({
@@ -149,10 +219,16 @@ export function useSimulation(initialPreset = 'projectile-motion') {
             position: { x: action.x ?? 0, y: action.y ?? 2.5 },
             color: isBox ? '#111111' : '#f2cf00',
           }))
+          const hasAttractor = scenario.forces.some((force) => force.type === 'central')
+          if (!hasAttractor && !scenario.forces.some((force) => force.type === 'gravity' && !force.bodyId)) {
+            scenario.forces.push({ id: `environment-gravity-${Date.now()}`, type: 'gravity', g: 9.80665 })
+          }
+          if (!hasAttractor && !scenario.constraints.some((constraint) => constraint.type === 'ground')) {
+            scenario.constraints.push({ id: `environment-ground-${Date.now()}`, type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 })
+          }
         }
 
         if (action.type === 'add_constraint' && action.target === 'ramp') {
-          scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'incline')
           scenario.constraints.push({ id: generatedIds[index], type: 'incline', start: { x: -4.5, y: 2.8 }, end: { x: 4.5, y: -2.2 }, rolling: true })
         }
 
@@ -168,7 +244,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         }
 
         if (action.type === 'add_force' && action.target === 'spring') {
-          const bodyId = selectedRef.current ?? scenario.bodies[0]?.id
+          const bodyId = newBodyId ?? selectedRef.current ?? scenario.bodies[0]?.id
           const body = scenario.bodies.find((candidate) => candidate.id === bodyId)
           if (body) scenario.forces.push({
             id: generatedIds[index],
@@ -180,6 +256,19 @@ export function useSimulation(initialPreset = 'projectile-motion') {
             damping: 0.05,
           })
         }
+
+        if (action.type === 'add_force' && action.target === 'central') {
+          const bodyId = newBodyId ?? selectedRef.current ?? scenario.bodies[0]?.id
+          const existing = scenario.forces.find((force) => force.type === 'central' && force.bodyId === bodyId)
+          if (!existing && bodyId) scenario.forces.push({
+            id: generatedIds[index],
+            type: 'central',
+            bodyId,
+            center: { x: 0, y: 0 },
+            strength: 19.36,
+            softening: 0.05,
+          })
+        }
       })
     })
     const addedBodyIndex = actions.findIndex((action) => action.type === 'add_body')
@@ -187,13 +276,25 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   }, [commitScenarioEdit, loadPreset])
 
   const addElement = useCallback((target) => {
+    if (target === 'gravity') {
+      const gravity = worldRef.current.forces.find((force) => force.type === 'gravity' && !force.bodyId)
+      if (gravity) removeForce(gravity.id)
+      else applyActions([{ type: 'add_force', target: 'gravity' }])
+      return
+    }
+    if (target === 'floor') {
+      const ground = worldRef.current.constraints.find((constraint) => constraint.type === 'ground')
+      if (ground) removeConstraint(ground.id)
+      else applyActions([{ type: 'add_constraint', target: 'floor' }])
+      return
+    }
     const type = target === 'sphere' || target === 'box'
       ? 'add_body'
       : target === 'ramp' || target === 'floor'
         ? 'add_constraint'
         : 'add_force'
-    applyActions([{ type, target }])
-  }, [applyActions])
+    applyActions([{ type, target: target === 'attractor' ? 'central' : target }])
+  }, [applyActions, removeConstraint, removeForce])
 
   const selectedBody = useMemo(
     () => world.bodies.find((body) => body.id === selectedId) ?? world.bodies[0],
@@ -220,5 +321,11 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     addElement,
     applyActions,
     removeBody,
+    updateForce,
+    removeForce,
+    updateConstraint,
+    removeConstraint,
+    moveConstraint,
+    prepareOrbit,
   }
 }

@@ -21,6 +21,59 @@ describe('Mechanarium studio', () => {
     expect(screen.getByRole('table')).toHaveTextContent('Sphere')
   })
 
+  it('makes ramps editable and removable', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add Ramp' }))
+    const startX = screen.getByRole('spinbutton', { name: 'Start x (m)' })
+    await user.clear(startX)
+    await user.type(startX, '-3')
+    await user.tab()
+    expect(screen.getByRole('spinbutton', { name: 'Start x (m)' })).toHaveValue(-3)
+    await user.click(screen.getByRole('button', { name: 'Remove Ramp' }))
+    expect(screen.queryByRole('spinbutton', { name: 'Start x (m)' })).not.toBeInTheDocument()
+  })
+
+  it('exposes clear gravity and ground toggles', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Turn Gravity Off' }))
+    expect(screen.getByRole('button', { name: 'Turn Gravity On' })).toBeEnabled()
+    expect(screen.queryByRole('spinbutton', { name: 'Acceleration (m/s²)' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Turn Gravity On' }))
+    expect(screen.getByRole('spinbutton', { name: 'Acceleration (m/s²)' })).toHaveValue(9.8066)
+
+    await user.click(screen.getByRole('button', { name: 'Turn Floor Off' }))
+    expect(screen.getByRole('button', { name: 'Turn Floor On' })).toBeEnabled()
+  })
+
+  it('gives newly spawned bodies gravity and a collision ground in a floating lab', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('tab', { name: /Labs/ }))
+    await user.click(screen.getByRole('button', { name: /Spring Oscillator/ }))
+    await user.click(screen.getByRole('tab', { name: /Build/ }))
+    expect(screen.getByRole('button', { name: 'Turn Gravity On' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Add Sphere' }))
+    expect(screen.getByRole('button', { name: 'Turn Gravity Off' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Turn Floor Off' })).toBeEnabled()
+  })
+
+  it('presents selected-body kinematics and can prepare an orbit manually', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('tab', { name: 'Kinematics' }))
+    expect(screen.getByText('Speed · Projectile')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Kinematics history chart' })).toBeInTheDocument()
+    expect(screen.getByText('-9.81 m/s²')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add Attractor' }))
+    await user.click(screen.getByRole('button', { name: 'Prepare clean circular orbit' }))
+    expect(screen.getByRole('button', { name: 'Turn Gravity On' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Turn Floor On' })).toBeEnabled()
+    expect(screen.getByRole('table')).toHaveTextContent('1.7')
+  })
+
   it('switches to prepared labs and loads an oscillator', async () => {
     const user = userEvent.setup()
     render(<App />)

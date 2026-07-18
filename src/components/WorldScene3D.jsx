@@ -17,7 +17,7 @@ function bodyGeometry(body) {
   return new THREE.SphereGeometry(body.radius, 32, 20)
 }
 
-export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNudge, onDelete, onToggle, running, history, overlays }) {
+export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMoveConstraint, onNudge, onDelete, onToggle, running, history, overlays }) {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
   const cameraRef = useRef(null)
@@ -30,11 +30,11 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
   const springsRef = useRef(new Map())
   const trailRef = useRef(null)
   const gridRef = useRef(null)
-  const handlersRef = useRef({ onSelect, onMove, running })
+  const handlersRef = useRef({ onSelect, onMove, onMoveConstraint, running })
 
   useEffect(() => {
-    handlersRef.current = { onSelect, onMove, running }
-  }, [onMove, onSelect, running])
+    handlersRef.current = { onSelect, onMove, onMoveConstraint, running }
+  }, [onMove, onMoveConstraint, onSelect, running])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -102,6 +102,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
     const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
     const intersection = new THREE.Vector3()
     let draggingId = null
+    let draggingConstraint = null
 
     const setPointer = (event) => {
       const rect = renderer.domElement.getBoundingClientRect()
@@ -112,27 +113,35 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
 
     const pointerDown = (event) => {
       setPointer(event)
-      const hits = raycaster.intersectObjects([...bodiesRef.current.values()], false)
+      const hits = raycaster.intersectObjects([...bodiesRef.current.values(), ...constraintsRef.current.children], false)
       const bodyId = hits[0]?.object?.userData?.bodyId
-      if (!bodyId) return
-      handlersRef.current.onSelect(bodyId)
-      if (!handlersRef.current.running) {
+      const constraintId = hits[0]?.object?.userData?.constraintId
+      if (bodyId) handlersRef.current.onSelect(bodyId)
+      if (bodyId && !handlersRef.current.running) {
         draggingId = bodyId
+        controls.enabled = false
+        renderer.domElement.setPointerCapture?.(event.pointerId)
+      }
+      if (constraintId && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
+        const center = hits[0].object.userData.center
+        draggingConstraint = { id: constraintId, offset: { x: intersection.x - center.x, y: intersection.y - center.y } }
         controls.enabled = false
         renderer.domElement.setPointerCapture?.(event.pointerId)
       }
     }
 
     const pointerMove = (event) => {
-      if (!draggingId || handlersRef.current.running) return
+      if ((!draggingId && !draggingConstraint) || handlersRef.current.running) return
       setPointer(event)
       if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
-        handlersRef.current.onMove(draggingId, { x: intersection.x, y: intersection.y })
+        if (draggingId) handlersRef.current.onMove(draggingId, { x: intersection.x, y: intersection.y })
+        if (draggingConstraint) handlersRef.current.onMoveConstraint(draggingConstraint.id, { x: intersection.x - draggingConstraint.offset.x, y: intersection.y - draggingConstraint.offset.y })
       }
     }
 
     const release = () => {
       draggingId = null
+      draggingConstraint = null
       controls.enabled = true
     }
 
@@ -186,8 +195,13 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
   }, [])
 
   useEffect(() => {
-    if (gridRef.current) gridRef.current.visible = overlays.grid
-  }, [overlays.grid])
+    if (!gridRef.current) return
+    const ground = world.constraints.find((constraint) => constraint.type === 'ground')
+    gridRef.current.visible = overlays.grid
+    gridRef.current.position.y = ground?.y ?? -3.6
+    gridRef.current.material.transparent = true
+    gridRef.current.material.opacity = ground ? 1 : 0.22
+  }, [overlays.grid, world.constraints])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -291,6 +305,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
         ramp.position.set((constraint.start.x + constraint.end.x) / 2, (constraint.start.y + constraint.end.y) / 2, 0)
         ramp.rotation.z = Math.atan2(dy, dx)
         ramp.receiveShadow = true
+        ramp.userData.constraintId = constraint.id
+        ramp.userData.center = { x: ramp.position.x, y: ramp.position.y }
         group.add(ramp)
       }
     }
@@ -343,12 +359,12 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
       className="world-scene"
       role="application"
       tabIndex="0"
-      aria-label="Three-dimensional physics world. Drag empty space to orbit the camera. Select and drag bodies while paused. Use arrow keys to move a selected body."
+      aria-label="Three-dimensional physics world. Drag empty space to orbit the camera. Select and drag bodies or ramps while paused. Use arrow keys to move a selected body."
       onKeyDown={onKeyDown}
     >
       <div className="scene-hint" aria-hidden="true"><span>Drag to orbit</span><span>Scroll to zoom</span></div>
       <div className="scene-status" aria-live="polite">
-        {world.bodies.find((body) => body.id === selectedId)?.name ?? 'No selection'} · {world.time.toFixed(2)} s
+        {world.bodies.find((body) => body.id === selectedId)?.name ?? 'No selection'} · {world.time.toFixed(2)} s · {world.constraints.some((constraint) => constraint.type === 'ground') ? 'ground on' : 'reference grid only'}
       </div>
     </div>
   )

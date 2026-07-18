@@ -12,10 +12,10 @@ Mechanarium is an interactive three-dimensional mechanics laboratory for learnin
 - Gravity, uniform force, drag, springs, central attraction, ground, inclines, and circle collisions
 - Projectile, momentum, rolling, oscillation, and orbital presets
 - Three.js world with an orbit camera, direct body manipulation, force vectors, tracks, and a monochrome measurement grid
-- Left-hand world builder for bodies, ramps, floors, springs, gravity, and prepared experiments
+- Left-hand world builder with explicit gravity/ground toggles, editable ramps, springs, orbital attractors, and prepared experiments
 - Persistent world-agent dock for natural-language construction and Socratic guidance
 - Body inspector for mass, size, position, velocity, restitution, and rotation
-- Live force vectors, trails, energy plots, momentum, and conservation error
+- Switchable energy and kinematics measurements with force vectors, optional trails, history plots, momentum, and conservation error
 - Local scenario saving, portable scenario JSON, and SI-labelled telemetry CSV
 - Responsive interface and accessible tabular body data
 
@@ -44,7 +44,7 @@ npm run build
 npm run check
 ```
 
-The completed foundation and studio redesign have 27 automated tests. See [`docs/TESTING.md`](./docs/TESTING.md) for the tested behaviors and latest results.
+The completed foundation and studio redesign have 36 automated tests. See [`docs/TESTING.md`](./docs/TESTING.md) for the tested behaviors and latest results.
 
 ## Documentation
 
@@ -52,6 +52,7 @@ The completed foundation and studio redesign have 27 automated tests. See [`docs
 - [`ProjectOutline.md`](./ProjectOutline.md) — extended architecture and research roadmap
 - [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) — units and physics conventions
 - [`docs/SCENARIO-FORMAT.md`](./docs/SCENARIO-FORMAT.md) — scenario v1 contract
+- [`docs/WORLD-BUILDING.md`](./docs/WORLD-BUILDING.md) — forces, surfaces, ramp editing, and manual orbit construction
 - [`docs/milestones/`](./docs/milestones/) — build/test/report record for each completed milestone
 - [`docs/decisions/`](./docs/decisions/) — architecture decision records
 

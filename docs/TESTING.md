@@ -12,7 +12,7 @@ Scenario tests cover version validation, invalid references, malformed JSON, rou
 
 ### Interface component tests
 
-Testing Library exercises the three-dimensional studio shell, builder tools, prepared labs, deterministic stepping, continuous Run playback across animation timestamp origins, body-property editing, local save, independent overlays, and natural-language world-building fallback.
+Testing Library exercises the three-dimensional studio shell, builder tools, prepared labs, deterministic stepping, continuous Run playback across animation timestamp origins, body/ramp/force editing, environment toggles, automatic gravity/ground creation, kinematics, manual orbit preparation, local save, independent overlays, and natural-language world-building fallback.
 
 ### Running-browser validation
 
@@ -28,6 +28,10 @@ The local production-shaped application was exercised in the browser on 2026-07-
 - pause held simulation time and reset restored the initial state;
 - Three.js world, overlay controls, builder rail, agent dock, inspector inputs, telemetry chart, and accessible body table were present;
 - no new browser console errors or warnings were recorded after the playback repair.
+- ramp endpoint editing persisted and the ramp remained removable;
+- a body added to the force-free spring lab automatically received Earth gravity and a collision ground, landing at the correct contact height;
+- the kinematics view exposed position, velocity, acceleration, speed, displacement, time, and history;
+- manually adding an attractor and preparing a clean orbit removed uniform gravity/ground and held a `6.325 m` orbital radius during the observed run.
 
 ### Continuous-render stability repair
 
@@ -38,7 +42,7 @@ An extended development run exposed excessive React and graphics-buffer churn cu
 Run on 2026-07-18:
 
 - lint: passed
-- automated tests: 29 passed across 9 files
+- automated tests: 36 passed across 9 files
 - production build: passed
 - coverage: 74.34% statements, 63.11% branches, 70.37% functions, 79.82% lines
 

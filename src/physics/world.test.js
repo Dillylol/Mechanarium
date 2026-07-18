@@ -35,6 +35,25 @@ describe('mechanics world', () => {
     }
   })
 
+  it('lets bodies fall freely until they contact a generic ramp', () => {
+    const scenario = getPreset('projectile-motion')
+    scenario.bodies = [createBody({ id: 'drop', position: { x: 0, y: 5 }, velocity: { x: 0, y: 0 } })]
+    scenario.constraints = [{ id: 'editable-ramp', type: 'incline', start: { x: -2, y: 0 }, end: { x: 2, y: 0 }, rolling: true }]
+    const airborne = run(createWorld(scenario), 0.2)
+    expect(airborne.bodies[0].position.y).toBeCloseTo(5 - 0.5 * 9.80665 * 0.2 ** 2, 4)
+    const landed = run(createWorld(scenario), 1.2)
+    expect(landed.bodies[0].position.y).toBeCloseTo(landed.bodies[0].radius, 4)
+  })
+
+  it('prevents a falling body from tunneling through the ground', () => {
+    const scenario = getPreset('projectile-motion')
+    scenario.bodies = [createBody({ id: 'drop', position: { x: 0, y: 1 }, velocity: { x: 0, y: -12 } })]
+    scenario.constraints = [{ id: 'ground', type: 'ground', y: -1, restitution: 0, friction: 0 }]
+    const world = run(createWorld(scenario), 1)
+    expect(world.bodies[0].position.y).toBeCloseTo(-1 + world.bodies[0].radius, 8)
+    expect(world.bodies[0].velocity.y).toBe(0)
+  })
+
   it('conserves linear momentum through circle collisions', () => {
     const initial = createWorld(getPreset('momentum-collision'))
     const world = run(initial, 1.5)

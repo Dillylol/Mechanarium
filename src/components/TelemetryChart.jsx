@@ -1,7 +1,21 @@
 import { useEffect, useRef } from 'react'
 
-export default function TelemetryChart({ history }) {
+const SERIES = {
+  energy: [
+    { key: 'kinetic', label: 'Kinetic', color: '#009d5b' },
+    { key: 'potential', label: 'Potential', color: '#b32727' },
+    { key: 'totalEnergy', label: 'Total', color: '#111111' },
+  ],
+  kinematics: [
+    { key: 'x', label: 'Position x', color: '#009d5b' },
+    { key: 'y', label: 'Position y', color: '#009fe3' },
+    { key: 'speed', label: 'Speed', color: '#b32727' },
+  ],
+}
+
+export default function TelemetryChart({ history, mode = 'energy' }) {
   const canvasRef = useRef(null)
+  const series = SERIES[mode]
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -22,26 +36,27 @@ export default function TelemetryChart({ history }) {
       return
     }
     const samples = history.slice(-240)
-    const maxEnergy = Math.max(...samples.flatMap((sample) => [Math.abs(sample.kinetic), Math.abs(sample.potential), Math.abs(sample.totalEnergy)]), 1)
-    const minEnergy = Math.min(...samples.flatMap((sample) => [sample.kinetic, sample.potential, sample.totalEnergy]), 0)
-    const range = Math.max(maxEnergy - minEnergy, 1e-9)
-    const colors = { kinetic: '#009d5b', potential: '#b32727', totalEnergy: '#111111' }
-    for (const key of Object.keys(colors)) {
-      context.strokeStyle = colors[key]; context.lineWidth = key === 'totalEnergy' ? 2.5 : 1.5
+    const values = samples.flatMap((sample) => series.map(({ key }) => sample[key] ?? 0))
+    const maxValue = Math.max(...values, 1)
+    const minValue = Math.min(...values, 0)
+    const range = Math.max(maxValue - minValue, 1e-9)
+    for (const { key, color } of series) {
+      context.strokeStyle = color
+      context.lineWidth = key === 'totalEnergy' || key === 'speed' ? 2.5 : 1.5
       context.beginPath()
       samples.forEach((sample, index) => {
         const x = 12 + (index / (samples.length - 1)) * (width - 24)
-        const y = height - 16 - ((sample[key] - minEnergy) / range) * (height - 30)
+        const y = height - 16 - (((sample[key] ?? 0) - minValue) / range) * (height - 30)
         if (index === 0) context.moveTo(x, y); else context.lineTo(x, y)
       })
       context.stroke()
     }
-  }, [history])
+  }, [history, mode, series])
 
   return (
     <div className="chart-wrap">
-      <div className="chart-legend" aria-hidden="true"><span className="kinetic">Kinetic</span><span className="potential">Potential</span><span className="total">Total</span></div>
-      <canvas ref={canvasRef} className="telemetry-chart" role="img" aria-label="Energy history chart showing kinetic, potential, and total energy" />
+      <div className="chart-legend" aria-hidden="true">{series.map(({ key, label, color }) => <span key={key} style={{ color }}>{label}</span>)}</div>
+      <canvas ref={canvasRef} className="telemetry-chart" role="img" aria-label={`${mode === 'energy' ? 'Energy' : 'Kinematics'} history chart`} />
     </div>
   )
 }

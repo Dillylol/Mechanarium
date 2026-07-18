@@ -1,8 +1,23 @@
 import { dot, magnitude, normalize, scale, subtract } from './vector.js'
 
+function inclineContact(body, incline) {
+  if (incline.bodyId === body.id) return true
+  if (incline.bodyId) return false
+  const segment = subtract(incline.end, incline.start)
+  const length = magnitude(segment)
+  const tangent = normalize(segment)
+  const normal = { x: -tangent.y, y: tangent.x }
+  const relative = subtract(body.position, incline.start)
+  const along = dot(relative, tangent)
+  const normalDistance = dot(relative, normal)
+  return along >= -body.radius && along <= length + body.radius
+    && normalDistance >= -body.radius
+    && normalDistance <= body.radius + 0.08
+}
+
 export function constrainAcceleration(body, acceleration, constraints) {
   const incline = constraints.find((constraint) => (
-    constraint.type === 'incline' && (!constraint.bodyId || constraint.bodyId === body.id)
+    constraint.type === 'incline' && inclineContact(body, constraint)
   ))
   if (!incline) return acceleration
 
@@ -37,6 +52,7 @@ function applyGround(body, ground) {
 }
 
 function applyIncline(body, incline) {
+  if (!inclineContact(body, incline)) return body
   const segment = subtract(incline.end, incline.start)
   const length = magnitude(segment)
   const tangent = normalize(segment)

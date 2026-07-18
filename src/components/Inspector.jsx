@@ -1,6 +1,6 @@
 import { Trash2 } from 'lucide-react'
 
-function NumberField({ label, value, unit, min, max, step = 0.1, onChange }) {
+export function NumberField({ label, value, unit, min, max, step = 0.1, onChange }) {
   const displayedValue = String(Number(value.toFixed(4)))
   const commit = (event) => {
     const parsed = Number(event.currentTarget.value)

@@ -29,8 +29,8 @@ const tool = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            type: { type: 'string', enum: ['add_body', 'add_constraint', 'add_force', 'load_preset', 'none'] },
-            target: { type: ['string', 'null'], enum: ['sphere', 'box', 'ramp', 'floor', 'spring', 'gravity', 'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'orbital-motion', null] },
+            type: { type: 'string', enum: ['add_body', 'add_constraint', 'add_force', 'remove_force', 'remove_constraint', 'load_preset', 'none'] },
+            target: { type: ['string', 'null'], enum: ['sphere', 'box', 'ramp', 'floor', 'spring', 'gravity', 'central', 'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'orbital-motion', null] },
             name: { type: ['string', 'null'] },
             x: { type: ['number', 'null'] },
             y: { type: ['number', 'null'] },
