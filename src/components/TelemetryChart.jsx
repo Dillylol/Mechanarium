@@ -8,8 +8,10 @@ export default function TelemetryChart({ history }) {
     const width = canvas.clientWidth || 420
     const height = canvas.clientHeight || 150
     const ratio = window.devicePixelRatio || 1
-    canvas.width = width * ratio
-    canvas.height = height * ratio
+    const pixelWidth = Math.round(width * ratio)
+    const pixelHeight = Math.round(height * ratio)
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight
     const context = canvas.getContext('2d')
     if (!context) return
     context.setTransform(ratio, 0, 0, ratio, 0, 0)

@@ -1,5 +1,19 @@
 import { dot, magnitude, normalize, scale, subtract } from './vector.js'
 
+export function constrainAcceleration(body, acceleration, constraints) {
+  const incline = constraints.find((constraint) => (
+    constraint.type === 'incline' && (!constraint.bodyId || constraint.bodyId === body.id)
+  ))
+  if (!incline) return acceleration
+
+  const tangent = normalize(subtract(incline.end, incline.start))
+  const along = dot(acceleration, tangent)
+  const rollingFactor = incline.rolling
+    ? body.mass / (body.mass + body.inertia / body.radius ** 2)
+    : 1
+  return scale(tangent, along * rollingFactor)
+}
+
 export function applyConstraints(body, constraints) {
   return constraints.reduce((current, constraint) => {
     if (constraint.bodyId && constraint.bodyId !== current.id) return current

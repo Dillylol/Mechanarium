@@ -27,6 +27,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
   const arrowsRef = useRef(new Map())
   const constraintsRef = useRef(null)
   const forceArtifactsRef = useRef(null)
+  const springsRef = useRef(new Map())
   const trailRef = useRef(null)
   const gridRef = useRef(null)
   const handlersRef = useRef({ onSelect, onMove, running })
@@ -40,6 +41,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
     if (!mount || typeof WebGLRenderingContext === 'undefined') return undefined
     const bodyMeshes = bodiesRef.current
     const forceArrows = arrowsRef.current
+    const springArtifacts = springsRef.current
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xf4f4f0)
@@ -141,6 +143,17 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
 
     let frame
     const render = () => {
+      const blend = handlersRef.current.running ? 0.28 : 1
+      for (const mesh of bodiesRef.current.values()) {
+        if (mesh.userData.targetPosition) mesh.position.lerp(mesh.userData.targetPosition, blend)
+        if (Number.isFinite(mesh.userData.targetAngle)) {
+          mesh.rotation.z += (mesh.userData.targetAngle - mesh.rotation.z) * blend
+        }
+      }
+      for (const [id, arrow] of arrowsRef.current) {
+        const mesh = bodiesRef.current.get(id)
+        if (mesh) arrow.position.copy(mesh.position)
+      }
       controls.update()
       renderer.render(scene, camera)
       frame = requestAnimationFrame(render)
@@ -166,6 +179,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
       controlsRef.current = null
       constraintsRef.current = null
       forceArtifactsRef.current = null
+      springArtifacts.clear()
       trailRef.current = null
       gridRef.current = null
     }
@@ -198,12 +212,17 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
         mesh.userData.bodyId = body.id
         mesh.castShadow = true
         mesh.receiveShadow = true
+        mesh.userData.targetPosition = new THREE.Vector3(body.position.x, body.position.y, 0)
+        mesh.userData.targetAngle = body.angle
+        mesh.position.copy(mesh.userData.targetPosition)
         scene.add(mesh)
         bodiesRef.current.set(body.id, mesh)
       }
-      mesh.position.set(body.position.x, body.position.y, 0)
-      if (/cylinder|roller/i.test(body.name)) mesh.rotation.set(Math.PI / 2, 0, body.angle)
-      else mesh.rotation.z = body.angle
+      mesh.userData.targetPosition.set(body.position.x, body.position.y, 0)
+      mesh.userData.targetAngle = body.angle
+      if (!running) mesh.position.copy(mesh.userData.targetPosition)
+      if (/cylinder|roller/i.test(body.name)) mesh.rotation.x = Math.PI / 2
+      if (!running) mesh.rotation.z = body.angle
       mesh.material.color.set(body.color)
       mesh.material.emissive.set(body.id === selectedId ? 0x2d2d2d : 0x000000)
     }
@@ -231,27 +250,29 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
           arrowsRef.current.set(body.id, arrow)
         }
         arrow.visible = true
-        arrow.position.set(body.position.x, body.position.y, 0)
+        arrow.position.copy(bodiesRef.current.get(body.id).position)
         arrow.setDirection(new THREE.Vector3(force.x / magnitude, force.y / magnitude, 0))
         arrow.setLength(Math.min(3.4, 0.75 + Math.log1p(magnitude) * 0.55), 0.24, 0.14)
       }
     }
 
-    if (trailRef.current) {
-      scene.remove(trailRef.current)
-      disposeObject(trailRef.current)
-      trailRef.current = null
+    if (!trailRef.current) {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(280 * 3), 3))
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x009d5b, transparent: true, opacity: 0.52 }))
+      line.frustumCulled = false
+      scene.add(line)
+      trailRef.current = line
     }
-    if (overlays.trails) {
-      const samples = history.filter((sample) => sample.bodyId === selectedId).slice(-280)
-      if (samples.length > 1) {
-        const geometry = new THREE.BufferGeometry().setFromPoints(samples.map((sample) => new THREE.Vector3(sample.x, sample.y, -0.03)))
-        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x009d5b, transparent: true, opacity: 0.6 }))
-        scene.add(line)
-        trailRef.current = line
-      }
-    }
-  }, [history, overlays.trails, overlays.vectors, selectedId, world.bodies, world.forces])
+    const samples = overlays.trails ? history.filter((sample) => sample.bodyId === selectedId).slice(-280) : []
+    const trail = trailRef.current
+    const positions = trail.geometry.getAttribute('position')
+    samples.forEach((sample, index) => positions.setXYZ(index, sample.x, sample.y, -0.03))
+    positions.needsUpdate = samples.length > 0
+    trail.geometry.setDrawRange(0, samples.length)
+    trail.visible = samples.length > 1
+    if (trail.visible) trail.geometry.computeBoundingSphere()
+  }, [history, overlays.trails, overlays.vectors, running, selectedId, world.bodies, world.forces])
 
   useEffect(() => {
     const group = constraintsRef.current
@@ -259,6 +280,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
     if (!group || !forceGroup) return
     for (const child of [...group.children]) { group.remove(child); disposeObject(child) }
     for (const child of [...forceGroup.children]) { forceGroup.remove(child); disposeObject(child) }
+    springsRef.current.clear()
 
     for (const constraint of world.constraints) {
       if (constraint.type === 'incline') {
@@ -275,12 +297,12 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
 
     for (const force of world.forces) {
       if (force.type === 'spring') {
-        const body = world.bodies.find((candidate) => candidate.id === force.bodyId)
-        if (body) {
-          const curve = new THREE.LineCurve3(new THREE.Vector3(force.anchor.x, force.anchor.y, 0), new THREE.Vector3(body.position.x, body.position.y, 0))
-          const spring = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.035, 6, false), new THREE.MeshStandardMaterial({ color: 0x111111 }))
-          forceGroup.add(spring)
-        }
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3))
+        const spring = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x111111, linewidth: 2 }))
+        spring.frustumCulled = false
+        forceGroup.add(spring)
+        springsRef.current.set(force.id, spring)
       }
       if (force.type === 'central') {
         const core = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshStandardMaterial({ color: 0x009fe3, roughness: 0.35 }))
@@ -289,7 +311,21 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onNu
         forceGroup.add(core)
       }
     }
-  }, [world.constraints, world.forces, world.bodies])
+  }, [world.constraints, world.forces])
+
+  useEffect(() => {
+    for (const force of world.forces) {
+      if (force.type !== 'spring') continue
+      const spring = springsRef.current.get(force.id)
+      const body = world.bodies.find((candidate) => candidate.id === force.bodyId)
+      if (!spring || !body) continue
+      const positions = spring.geometry.getAttribute('position')
+      positions.setXYZ(0, force.anchor.x, force.anchor.y, 0)
+      positions.setXYZ(1, body.position.x, body.position.y, 0)
+      positions.needsUpdate = true
+      spring.geometry.computeBoundingSphere()
+    }
+  }, [world.bodies, world.forces])
 
   const onKeyDown = (event) => {
     if (event.code === 'Space') { event.preventDefault(); onToggle(); return }

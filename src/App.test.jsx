@@ -9,6 +9,7 @@ describe('Mechanarium studio', () => {
     expect(screen.getByRole('heading', { name: 'Projectile Motion' })).toBeInTheDocument()
     expect(screen.getByRole('application', { name: /three-dimensional physics world/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'trails' })).not.toBeChecked()
     expect(screen.getByRole('complementary', { name: /world data/i })).toHaveTextContent('Total energy')
   })
 
@@ -52,8 +53,8 @@ describe('Mechanarium studio', () => {
     await user.click(screen.getByRole('button', { name: 'Run' }))
     expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled()
     act(() => callbacks.shift()(10))
-    act(() => callbacks.shift()(30))
-    expect(screen.getByText('0.017 s')).toBeInTheDocument()
+    act(() => callbacks.shift()(50))
+    expect(screen.getByText('0.033 s')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Pause' }))
     requestFrame.mockRestore()

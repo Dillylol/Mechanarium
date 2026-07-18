@@ -6,6 +6,7 @@ import { magnitude } from '../physics/vector.js'
 import { createWorld, stepWorld, worldToScenario } from '../physics/world.js'
 
 const HISTORY_LIMIT = 480
+const UI_PUBLISH_INTERVAL_MS = 1000 / 30
 
 function sampleWorld(world, bodyId) {
   const body = world.bodies.find((candidate) => candidate.id === bodyId) ?? world.bodies[0]
@@ -47,9 +48,11 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     if (!running) return undefined
     let frameId
     let previous
+    let lastPublished
     const frame = (now) => {
       if (previous === undefined) {
         previous = now
+        lastPublished = now
         frameId = requestAnimationFrame(frame)
         return
       }
@@ -58,8 +61,11 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       let next = worldRef.current
       clockRef.current.advance(elapsed, (dt) => { next = stepWorld(next, dt) })
       worldRef.current = next
-      setWorld(next)
-      record(next)
+      if (now - lastPublished >= UI_PUBLISH_INTERVAL_MS || next.time >= next.duration) {
+        lastPublished = now
+        setWorld(next)
+        record(next)
+      }
       if (next.time >= next.duration) setRunning(false)
       else frameId = requestAnimationFrame(frame)
     }

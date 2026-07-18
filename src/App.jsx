@@ -11,7 +11,7 @@ import { useSimulation } from './hooks/useSimulation.js'
 
 export default function App() {
   const simulation = useSimulation()
-  const [overlays, setOverlays] = useState({ grid: true, vectors: true, trails: true })
+  const [overlays, setOverlays] = useState({ grid: true, vectors: true, trails: false })
   const [notice, setNotice] = useState('World ready')
   const fileInputRef = useRef(null)
   const presets = listPresets()

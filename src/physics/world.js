@@ -1,6 +1,6 @@
 import { cloneScenario, validateScenario } from '../domain/scenario.js'
 import { conservationError, summarizeSystem, withEnergyTotal } from './metrics.js'
-import { applyConstraints, resolveCircleCollisions } from './constraints.js'
+import { applyConstraints, constrainAcceleration, resolveCircleCollisions } from './constraints.js'
 import { netForceOnBody, potentialEnergyForces } from './forces.js'
 import { integrateParticle, integrateRotation } from './integrators.js'
 import { scale } from './vector.js'
@@ -34,7 +34,11 @@ export function createWorld(scenario) {
 export function stepWorld(world, dt = world.fixedStep) {
   const integrated = world.bodies.map((body) => {
     if (body.locked) return body
-    const accelerationAt = (position, velocity) => scale(netForceOnBody(world.forces, body, position, velocity), 1 / body.mass)
+    const accelerationAt = (position, velocity) => constrainAcceleration(
+      body,
+      scale(netForceOnBody(world.forces, body, position, velocity), 1 / body.mass),
+      world.constraints,
+    )
     const particle = integrateParticle({ ...body, time: world.time }, dt, accelerationAt, world.integrator)
     const rotation = integrateRotation(body, dt, body.angularAcceleration ?? 0)
     return applyConstraints({ ...body, ...particle, ...rotation }, world.constraints)

@@ -4,7 +4,7 @@
 
 ### Physics fixtures
 
-Analytic and conservation-based tests cover the fixed-step clock, constant acceleration, harmonic motion, energy/momentum summaries, projectile motion, collision momentum, rolling coupling, spring energy, and orbital bounds.
+Analytic and conservation-based tests cover the fixed-step clock, mass-independent Earth gravity, constant acceleration, harmonic motion, energy/momentum summaries, projectile motion, collision momentum, rolling inertia, spring energy, and orbital bounds.
 
 ### Domain contract tests
 
@@ -29,12 +29,16 @@ The local production-shaped application was exercised in the browser on 2026-07-
 - Three.js world, overlay controls, builder rail, agent dock, inspector inputs, telemetry chart, and accessible body table were present;
 - no new browser console errors or warnings were recorded after the playback repair.
 
+### Continuous-render stability repair
+
+An extended development run exposed excessive React and graphics-buffer churn culminating in a browser out-of-memory error. The repair limits React telemetry publication to 30 Hz while retaining 120 Hz fixed-step physics, interpolates body meshes on the render loop, reuses trail and spring buffers, avoids reallocating the telemetry canvas, and makes trails opt-in. The full automated gate and production build pass after these changes; a fresh browser reload is required for a tab that already exhausted its rendering context.
+
 ## Latest quality gate
 
 Run on 2026-07-18:
 
 - lint: passed
-- automated tests: 28 passed across 9 files
+- automated tests: 29 passed across 9 files
 - production build: passed
 - coverage: 74.34% statements, 63.11% branches, 70.37% functions, 79.82% lines
 

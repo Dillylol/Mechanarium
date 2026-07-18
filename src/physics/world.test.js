@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getPreset } from '../domain/presets.js'
+import { createBody } from '../domain/scenario.js'
 import { createWorld, stepWorld } from './world.js'
 
 function run(world, seconds) {
@@ -19,6 +20,21 @@ describe('mechanics world', () => {
     expect(world.bodies[0].velocity.y).toBeCloseTo(-2.60665, 5)
   })
 
+  it('applies Earth gravity equally to different masses', () => {
+    const scenario = getPreset('projectile-motion')
+    scenario.bodies = [
+      createBody({ id: 'light', mass: 1, position: { x: -1, y: 10 }, velocity: { x: 0, y: 0 } }),
+      createBody({ id: 'heavy', mass: 8, position: { x: 1, y: 10 }, velocity: { x: 0, y: 0 } }),
+    ]
+    scenario.constraints = []
+    const world = run(createWorld(scenario), 1)
+
+    for (const body of world.bodies) {
+      expect(body.velocity.y).toBeCloseTo(-9.80665, 5)
+      expect(body.position.y).toBeCloseTo(10 - 0.5 * 9.80665, 5)
+    }
+  })
+
   it('conserves linear momentum through circle collisions', () => {
     const initial = createWorld(getPreset('momentum-collision'))
     const world = run(initial, 1.5)
@@ -32,7 +48,10 @@ describe('mechanics world', () => {
     const runLength = Math.hypot(ramp.end.x - ramp.start.x, ramp.end.y - ramp.start.y)
     const unit = { x: (ramp.end.x - ramp.start.x) / runLength, y: (ramp.end.y - ramp.start.y) / runLength }
     const along = (body.position.x - ramp.start.x) * unit.x + (body.position.y - ramp.start.y) * unit.y
+    const speedAlong = body.velocity.x * unit.x + body.velocity.y * unit.y
+    const expectedAcceleration = 9.80665 * Math.abs(ramp.end.y - ramp.start.y) / runLength * (2 / 3)
     expect(body.angle).toBeCloseTo(along / body.radius, 8)
+    expect(speedAlong).toBeCloseTo(expectedAcceleration * 0.5, 5)
   })
 
   it('keeps undamped spring energy tightly bounded', () => {
