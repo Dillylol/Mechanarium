@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, Box, Circle, Gauge, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
+import { ArrowDown, Box, Circle, Crosshair, Gauge, Link2, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
 
 const elements = [
   { id: 'sphere', label: 'Sphere', icon: Circle },
@@ -7,6 +7,9 @@ const elements = [
   { id: 'ramp', label: 'Ramp', icon: Triangle },
   { id: 'floor', label: 'Floor', icon: Minus },
   { id: 'spring', label: 'Spring', icon: Waves },
+  { id: 'rope', label: 'Rope', icon: Link2 },
+  { id: 'beam', label: 'Beam', icon: Minus },
+  { id: 'attachment', label: 'Attachment Point', icon: Crosshair },
   { id: 'gravity', label: 'Gravity', icon: ArrowDown },
   { id: 'attractor', label: 'Attractor', icon: Orbit },
 ]
@@ -18,7 +21,7 @@ const instruments = [
 
 export default function BuilderRail({ presets, activePreset, world, onAddElement, onLoadPreset }) {
   const [tab, setTab] = useState('build')
-  const gravityOn = world.forces.some((force) => force.type === 'gravity' && !force.bodyId)
+  const gravityOn = world.gravity.enabled
   const groundOn = world.constraints.some((constraint) => constraint.type === 'ground')
   return (
     <aside className="builder-rail" aria-labelledby="builder-title">
@@ -42,7 +45,7 @@ export default function BuilderRail({ presets, activePreset, world, onAddElement
           <div className="instrument-list">
             {instruments.map(({ label, icon: Icon }) => <button key={label} type="button" disabled><Icon size={17} /><span>{label}</span><small>soon</small></button>)}
           </div>
-          <div className="builder-note"><strong>Direct manipulation</strong><p>Select and drag bodies while paused. Edit or remove ramps, floors, forces, and attractors in the right rail.</p></div>
+          <div className="builder-note"><strong>Assembly mode</strong><p>Pause to translate, rotate, resize, snap ports, or reconnect springs and ropes. Run locks the topology.</p></div>
         </div>
       ) : (
         <div className="rail-content">

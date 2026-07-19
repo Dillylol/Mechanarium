@@ -1,4 +1,4 @@
-import { add, magnitude, normalize, scale, subtract, vector } from './vector.js'
+import { add, dot, magnitude, normalize, scale, subtract, vector } from './vector.js'
 
 const appliesTo = (force, body) => !force.bodyId || force.bodyId === body.id
 
@@ -30,6 +30,16 @@ export function netForceOnBody(forces, body, position = body.position, velocity 
   return forces.reduce((net, force) => add(net, forceOnBody(force, body, position, velocity)), vector())
 }
 
+export function gravityForce(world, body) {
+  if (body.locked || body.mode === 'track' || !world.gravity?.enabled || !body.gravityEnabled) return vector()
+  const direction = normalize(world.gravity.direction)
+  return scale(direction, body.mass * world.gravity.g * body.gravityMultiplier)
+}
+
+export function netWorldForce(world, body, load = vector(), position = body.position, velocity = body.velocity) {
+  return add(add(netForceOnBody(world.forces, body, position, velocity), gravityForce(world, body)), load)
+}
+
 export function potentialEnergyForces(forces, bodies) {
   return forces.reduce((total, force) => {
     if (force.type === 'gravity') {
@@ -49,4 +59,13 @@ export function potentialEnergyForces(forces, bodies) {
     }
     return total
   }, 0)
+}
+
+export function worldPotentialEnergy(world) {
+  const direction = normalize(world.gravity?.direction ?? { x: 0, y: -1 })
+  const gravity = world.gravity?.enabled ? world.bodies.reduce((sum, body) => {
+    if (!body.gravityEnabled || body.mode === 'track') return sum
+    return sum - body.mass * world.gravity.g * body.gravityMultiplier * dot(body.position, direction)
+  }, 0) : 0
+  return gravity + potentialEnergyForces(world.forces, world.bodies)
 }

@@ -3,135 +3,105 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App.jsx'
 
-describe('Mechanarium studio', () => {
-  it('opens a three-dimensional world with builder, controls, and data', () => {
+describe('Mechanarium assembly studio', () => {
+  it('opens the 3D world with builder, controls, and data', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: 'Projectile Motion' })).toBeInTheDocument()
     expect(screen.getByRole('application', { name: /three-dimensional physics world/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
-    expect(screen.getByRole('checkbox', { name: 'trails' })).not.toBeChecked()
     expect(screen.getByRole('complementary', { name: /world data/i })).toHaveTextContent('Total energy')
   })
 
-  it('adds world elements from the left builder', async () => {
-    const user = userEvent.setup()
-    render(<App />)
+  it('adds bodies with per-object gravity controls', async () => {
+    const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Add Sphere' }))
     expect(screen.getByRole('heading', { name: 'Sphere' })).toBeInTheDocument()
-    expect(screen.getByRole('table')).toHaveTextContent('Sphere')
+    expect(screen.getByRole('checkbox', { name: 'Gravity for this object' })).toBeChecked()
+    expect(screen.getByRole('spinbutton', { name: 'Gravity multiplier (×)' })).toHaveValue(1)
   })
 
-  it('makes ramps editable and removable', async () => {
-    const user = userEvent.setup()
-    render(<App />)
+  it('edits ramps by center, angle, and length, then removes them', async () => {
+    const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Add Ramp' }))
-    const startX = screen.getByRole('spinbutton', { name: 'Start x (m)' })
-    await user.clear(startX)
-    await user.type(startX, '-3')
-    await user.tab()
-    expect(screen.getByRole('spinbutton', { name: 'Start x (m)' })).toHaveValue(-3)
+    const centerX = screen.getByRole('spinbutton', { name: 'Center x (m)' })
+    await user.clear(centerX); await user.type(centerX, '-3'); await user.tab()
+    expect(screen.getByRole('spinbutton', { name: 'Center x (m)' })).toHaveValue(-3)
+    expect(screen.getByRole('spinbutton', { name: 'Angle (deg)' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Length (m)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Place selected body at start' })).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Remove Ramp' }))
-    expect(screen.queryByRole('spinbutton', { name: 'Start x (m)' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Ramp' })).not.toBeInTheDocument()
   })
 
-  it('exposes clear gravity and ground toggles', async () => {
-    const user = userEvent.setup()
-    render(<App />)
+  it('exposes master gravity and ground toggles', async () => {
+    const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Turn Gravity Off' }))
-    expect(screen.getByRole('button', { name: 'Turn Gravity On' })).toBeEnabled()
-    expect(screen.queryByRole('spinbutton', { name: 'Acceleration (m/s²)' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Enable master gravity' })).not.toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Turn Gravity On' }))
-    expect(screen.getByRole('spinbutton', { name: 'Acceleration (m/s²)' })).toHaveValue(9.8066)
-
+    expect(screen.getByRole('spinbutton', { name: 'Magnitude (m/s²)' })).toHaveValue(9.8066)
     await user.click(screen.getByRole('button', { name: 'Turn Floor Off' }))
     expect(screen.getByRole('button', { name: 'Turn Floor On' })).toBeEnabled()
   })
 
-  it('gives newly spawned bodies gravity and a collision ground in a floating lab', async () => {
-    const user = userEvent.setup()
-    render(<App />)
+  it('builds beams, custom ports, and ropes while paused', async () => {
+    const user = userEvent.setup(); render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add Beam' }))
+    expect(screen.getByRole('heading', { name: 'Beam' })).toBeInTheDocument()
+    const beamMode = screen.getByRole('combobox', { name: 'Beam mode' })
+    expect(beamMode).toHaveValue('dynamic')
+    await user.selectOptions(beamMode, 'pinned')
+    expect(screen.getByRole('region', { name: 'Assembly constraints' })).toHaveTextContent('pin')
+    await user.click(screen.getByRole('button', { name: 'Add Attachment Point' }))
+    expect(screen.getByRole('heading', { name: 'Port 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pin this port to world' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Add Rope' }))
+    expect(screen.getByRole('heading', { name: 'Rope' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Maximum length (m)' })).toBeInTheDocument()
+  })
+
+  it('loads all new prepared SHM systems', async () => {
+    const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('tab', { name: /Labs/ }))
-    await user.click(screen.getByRole('button', { name: /Spring Oscillator/ }))
-    await user.click(screen.getByRole('tab', { name: /Build/ }))
-    expect(screen.getByRole('button', { name: 'Turn Gravity On' })).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: 'Add Sphere' }))
-    expect(screen.getByRole('button', { name: 'Turn Gravity Off' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Turn Floor Off' })).toBeEnabled()
+    for (const name of ['Inclined Spring Oscillator', 'Massless-Rope Pendulum', 'Uniform-Beam Pendulum', 'Compound Beam Oscillator']) {
+      await user.click(screen.getByRole('button', { name: new RegExp(name) }))
+      expect(screen.getByRole('heading', { name })).toBeInTheDocument()
+    }
   })
 
-  it('presents selected-body kinematics and can prepare an orbit manually', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await user.click(screen.getByRole('tab', { name: 'Kinematics' }))
-    expect(screen.getByText('Speed · Projectile')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Kinematics history chart' })).toBeInTheDocument()
-    expect(screen.getByText('-9.81 m/s²')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Add Attractor' }))
-    await user.click(screen.getByRole('button', { name: 'Prepare clean circular orbit' }))
-    expect(screen.getByRole('button', { name: 'Turn Gravity On' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Turn Floor On' })).toBeEnabled()
-    expect(screen.getByRole('table')).toHaveTextContent('1.7')
+  it('locks structural fields while running and resets edits to time zero', async () => {
+    const callbacks = []
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callbacks.push(callback); return callbacks.length })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const user = userEvent.setup(); render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Run' }))
+    expect(screen.getByRole('spinbutton', { name: 'Mass (kg)' })).toBeDisabled()
+    act(() => callbacks.shift()(10)); act(() => callbacks.shift()(50))
+    expect(screen.getByText('0.033 s')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Pause' }))
+    const mass = screen.getByRole('spinbutton', { name: 'Mass (kg)' })
+    await user.clear(mass); await user.type(mass, '2.5'); await user.tab()
+    expect(screen.getByText('0.000 s')).toBeInTheDocument()
+    requestFrame.mockRestore(); cancelFrame.mockRestore()
   })
 
-  it('switches to prepared labs and loads an oscillator', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await user.click(screen.getByRole('tab', { name: /Labs/ }))
-    await user.click(screen.getByRole('button', { name: /Spring Oscillator/ }))
-    expect(screen.getByRole('heading', { name: 'Spring Oscillator' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Spring mass' })).toBeInTheDocument()
-  })
-
-  it('advances one deterministic step and toggles overlays', async () => {
-    const user = userEvent.setup()
-    render(<App />)
+  it('advances one fixed step and exports assembly-aware accessible data', async () => {
+    const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Advance one fixed step' }))
     expect(screen.getByText('0.008 s')).toBeInTheDocument()
-    const vectors = screen.getByRole('checkbox', { name: 'vectors' })
-    await user.click(vectors)
-    expect(vectors).not.toBeChecked()
+    expect(screen.getByRole('region', { name: 'Assembly constraints' })).toHaveTextContent('Topology valid')
   })
 
-  it('runs when animation frames use a different timestamp origin', async () => {
-    const callbacks = []
-    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      callbacks.push(callback)
-      return callbacks.length
-    })
-    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.click(screen.getByRole('button', { name: 'Run' }))
-    expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled()
-    act(() => callbacks.shift()(10))
-    act(() => callbacks.shift()(50))
-    expect(screen.getByText('0.033 s')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Pause' }))
-    requestFrame.mockRestore()
-    cancelFrame.mockRestore()
-  })
-
-  it('edits the selected body and saves the world locally', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    const mass = screen.getByRole('spinbutton', { name: 'Mass (kg)' })
-    await user.clear(mass)
-    await user.type(mass, '2.5')
-    await user.tab()
+  it('saves Scenario v2 locally', async () => {
+    const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Save world locally' }))
-    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"mass": 2.5')
-    expect(screen.getByText('Saved on this device')).toBeInTheDocument()
+    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"version": 2')
   })
 
-  it('applies a natural-language world-building request through the local fallback', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await user.type(screen.getByLabelText('Ask the world-building agent'), 'Add a sphere, ramp, floor, and gravity')
+  it('applies a natural-language assembly request through the local fallback', async () => {
+    const user = userEvent.setup(); render(<App />)
+    await user.type(screen.getByLabelText('Ask the world-building agent'), 'Add a sphere, beam, rope, and attachment point')
     await user.click(screen.getByRole('button', { name: 'Send world-building request' }))
-    expect(await screen.findByRole('heading', { name: 'Sphere' })).toBeInTheDocument()
-    expect(screen.getByText(/Applied 4 world changes/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Applied 4 world changes/i)).toBeInTheDocument()
+    expect(screen.getByText(/Tracks & connectors/)).toBeInTheDocument()
   })
 })

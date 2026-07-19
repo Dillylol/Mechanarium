@@ -1,49 +1,28 @@
 # Testing strategy and current results
 
-## Layers
+## Automated layers
 
-### Physics fixtures
+Physics fixtures cover 120 Hz stepping, master/per-body gravity, spring period and energy, rope slack/tension and pendulum period, beam and compound inertia, physical-pendulum period, bounded pin error, exact track-top contact, friction/restitution, collisions, central force, and a 60-second compound-assembly soak.
 
-Analytic and conservation-based tests cover the fixed-step clock, mass-independent Earth gravity, constant acceleration, harmonic motion, energy/momentum summaries, projectile motion, collision momentum, rolling inertia, spring energy, and orbital bounds.
+Domain fixtures cover Scenario v1-to-v2 migration, v2 round trip, invalid beam/port/joint graphs, deterministic default ports, custom-port preservation, preset isolation, world-agent actions, and assembly-aware SI CSV export.
 
-### Domain contract tests
+Testing Library fixtures cover the 3D studio, body gravity overrides, ramp center/angle/length editing, start placement, beam/rope/custom-port construction, all four SHM labs, paused edit locks, time reset after edits, stepping, accessible assembly diagnostics, local v2 saving, and natural-language assembly requests.
 
-Scenario tests cover version validation, invalid references, malformed JSON, round-trip serialization, isolated presets, curriculum coverage, and SI-labelled CSV export.
+## Browser acceptance checklist
 
-### Interface component tests
-
-Testing Library exercises the three-dimensional studio shell, builder tools, prepared labs, deterministic stepping, continuous Run playback across animation timestamp origins, body/ramp/force editing, environment toggles, automatic gravity/ground creation, kinematics, manual orbit preparation, local save, independent overlays, and natural-language world-building fallback.
-
-### Running-browser validation
-
-The local production-shaped application was exercised in the browser on 2026-07-18:
-
-- application title and `/Mechanarium/` route loaded;
-- all five experiment presets were exposed through semantic controls;
-- one fixed step changed time from `0.000 s` to `0.008 s`;
-- switching to Spring Oscillator reset the selected body correctly;
-- adding a second body selected and exposed its inspector;
-- editing body mass accepted `2.5 kg`;
-- run transitioned to pause and advanced live time from `0.000 s` to `0.533 s`, moving the projectile from `(-6.0, 2.0)` to `(-2.9, 4.4)`;
-- pause held simulation time and reset restored the initial state;
-- Three.js world, overlay controls, builder rail, agent dock, inspector inputs, telemetry chart, and accessible body table were present;
-- no new browser console errors or warnings were recorded after the playback repair.
-- ramp endpoint editing persisted and the ramp remained removable;
-- a body added to the force-free spring lab automatically received Earth gravity and a collision ground, landing at the correct contact height;
-- the kinematics view exposed position, velocity, acceleration, speed, displacement, time, and history;
-- manually adding an attractor and preparing a clean orbit removed uniform gravity/ground and held a `6.325 m` orbital radius during the observed run.
-
-### Continuous-render stability repair
-
-An extended development run exposed excessive React and graphics-buffer churn culminating in a browser out-of-memory error. The repair limits React telemetry publication to 30 Hz while retaining 120 Hz fixed-step physics, interpolates body meshes on the render loop, reuses trail and spring buffers, avoids reallocating the telemetry canvas, and makes trails opt-in. The full automated gate and production build pass after these changes; a fresh browser reload is required for a tab that already exhausted its rendering context.
+- Load and Run Inclined Spring Oscillator, Massless-Rope Pendulum, Uniform-Beam Pendulum, and Compound Beam Oscillator.
+- Manually add a beam, attachment point, and rope; move a connector endpoint between a world anchor and a highlighted port.
+- Rotate and resize a ramp/beam with gizmos and verify the body rests on the visible top face.
+- Confirm Run hides/locks structural controls, Pause restores them, and the next edit resets time and telemetry.
+- Leave the compound assembly running for at least 60 seconds and inspect console, interaction responsiveness, and memory behavior.
 
 ## Latest quality gate
 
-Run on 2026-07-18:
+Run on 2026-07-19:
 
-- lint: passed
-- automated tests: 36 passed across 9 files
-- production build: passed
-- coverage: 74.34% statements, 63.11% branches, 70.37% functions, 79.82% lines
+- lint: passed;
+- automated tests: 42 passed across 9 files;
+- production build: passed;
+- 60-second numerical soak: passed with finite state and bounded energy error.
 
-Coverage is reported for guidance, not used to replace analytic fixture quality. Future milestones should preserve the physics suite and add regression fixtures for each new interaction or force model.
+The existing Three.js bundle-size advisory remains non-blocking. A later performance milestone will split the render bundle and move physics execution behind the established world boundary.

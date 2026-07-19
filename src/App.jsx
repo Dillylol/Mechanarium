@@ -15,11 +15,14 @@ export default function App() {
   const [notice, setNotice] = useState('World ready')
   const fileInputRef = useRef(null)
   const presets = listPresets()
-  const { world, selectedBody } = simulation
+  const { world, selectedBody, selectedEntity } = simulation
 
   const updateBody = (changes) => simulation.updateBody(selectedBody.id, changes)
-  const moveBody = (bodyId, position) => simulation.updateBody(bodyId, { position, velocity: { x: 0, y: 0 } })
-  const nudgeSelected = (dx, dy) => updateBody({ position: { x: selectedBody.position.x + dx, y: selectedBody.position.y + dy } })
+  const moveBody = (bodyId, position) => simulation.moveEntity(bodyId, position)
+  const nudgeSelected = (dx, dy) => {
+    if (selectedEntity.type === 'segment') simulation.updateTrack(selectedEntity.id, { center: { x: selectedEntity.center.x + dx, y: selectedEntity.center.y + dy } })
+    else if (selectedEntity.position) simulation.updateBody(selectedEntity.id, { position: { x: selectedEntity.position.x + dx, y: selectedEntity.position.y + dy } })
+  }
 
   const saveLocally = () => {
     localStorage.setItem('mechanarium:last-scenario', scenarioJson(simulation.scenario))
@@ -54,6 +57,10 @@ export default function App() {
   }
 
   const toggleOverlay = (name) => setOverlays((current) => ({ ...current, [name]: !current[name] }))
+  const toggleRun = () => {
+    const accepted = simulation.setRunning(!simulation.running)
+    if (accepted === false) setNotice(world.diagnostics.join(' '))
+  }
 
   return (
     <div className="mechanarium-app">
@@ -61,7 +68,7 @@ export default function App() {
         <a className="wordmark" href="#world" aria-label="Mechanarium home"><span>M</span><strong>MECHANARIUM</strong></a>
         <div className="scenario-identity"><small>ACTIVE WORLD</small><strong>{world.name}</strong></div>
         <div className="run-controls" aria-label="Simulation controls">
-          <button className="run-button" type="button" onClick={() => simulation.setRunning(!simulation.running)}>{simulation.running ? <Pause size={16} /> : <Play size={16} />}<span>{simulation.running ? 'Pause' : 'Run'}</span></button>
+          <button className="run-button" type="button" onClick={toggleRun}>{simulation.running ? <Pause size={16} /> : <Play size={16} />}<span>{simulation.running ? 'Pause' : 'Run'}</span></button>
           <button type="button" onClick={simulation.stepOnce} disabled={simulation.running} aria-label="Advance one fixed step"><SkipForward size={16} /></button>
           <button type="button" onClick={simulation.reset} aria-label="Reset world"><RotateCcw size={16} /></button>
           <label className="speed-select"><span className="visually-hidden">Playback speed</span><select value={simulation.speed} onChange={(event) => simulation.setSpeed(Number(event.target.value))}><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
@@ -91,9 +98,12 @@ export default function App() {
               onSelect={simulation.setSelectedId}
               onMove={moveBody}
               onMoveConstraint={simulation.moveConstraint}
+              onTransform={(id, changes) => world.tracks.some((track) => track.id === id) ? simulation.updateTrack(id, changes) : simulation.updateBody(id, changes)}
+              onMoveConnectorEndpoint={simulation.moveConnectorEndpoint}
+              onDisconnect={() => simulation.disconnectConnector(simulation.selectedId)}
               onNudge={nudgeSelected}
-              onDelete={() => simulation.removeBody(simulation.selectedId)}
-              onToggle={() => simulation.setRunning(!simulation.running)}
+              onDelete={() => simulation.removeEntity(simulation.selectedId)}
+              onToggle={toggleRun}
               running={simulation.running}
               history={simulation.history}
               overlays={overlays}
@@ -105,14 +115,24 @@ export default function App() {
         <DataRail
           world={world}
           selectedBody={selectedBody}
+          selectedEntity={selectedEntity}
+          connectorState={simulation.selectedConnectorState}
+          connectionPortId={simulation.connectionPortId}
           history={simulation.history}
           onUpdateBody={updateBody}
-          onRemoveBody={() => simulation.removeBody(selectedBody.id)}
+          onUpdateTrack={simulation.updateTrack}
+          onUpdateConnector={simulation.updateConnector}
+          onUpdatePort={simulation.updatePort}
+          onPinToWorld={simulation.pinPortToWorld}
+          onConnectPort={simulation.connectPort}
+          onUpdateGravity={simulation.updateGravity}
+          onRemoveEntity={simulation.removeEntity}
           onUpdateForce={simulation.updateForce}
           onRemoveForce={simulation.removeForce}
           onUpdateConstraint={simulation.updateConstraint}
           onRemoveConstraint={simulation.removeConstraint}
           onPrepareOrbit={simulation.prepareOrbit}
+          onPlaceAtStart={simulation.placeBodyAtStart}
           onExport={exportData}
           running={simulation.running}
         />

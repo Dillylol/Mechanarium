@@ -1,21 +1,230 @@
 import { INTEGRATORS } from '../physics/constants.js'
 import { isFiniteVector } from '../physics/vector.js'
 
-export const SCENARIO_VERSION = 1
-export const BODY_SHAPES = Object.freeze(['circle', 'box'])
-export const FORCE_TYPES = Object.freeze(['gravity', 'uniform', 'drag', 'spring', 'central'])
-export const CONSTRAINT_TYPES = Object.freeze(['ground', 'incline'])
+export const SCENARIO_VERSION = 2
+export const BODY_SHAPES = Object.freeze(['circle', 'box', 'beam'])
+export const BEAM_MODES = Object.freeze(['dynamic', 'pinned', 'track'])
+export const FORCE_TYPES = Object.freeze(['uniform', 'drag', 'central'])
+export const CONSTRAINT_TYPES = Object.freeze(['ground'])
+export const CONNECTOR_TYPES = Object.freeze(['spring', 'rope'])
+export const JOINT_TYPES = Object.freeze(['rigid', 'pin'])
 
 const finitePositive = (value) => Number.isFinite(value) && value > 0
+const finiteNonNegative = (value) => Number.isFinite(value) && value >= 0
+const copy = (value) => structuredClone(value)
 
-export function validateScenario(scenario) {
+export const beamInertia = (mass, length) => mass * length ** 2 / 12
+
+export function createBody(overrides = {}) {
+  const id = overrides.id ?? `body-${crypto.randomUUID()}`
+  const radius = overrides.radius ?? 0.35
+  const mass = overrides.mass ?? 1
+  const shape = overrides.shape ?? 'circle'
+  const length = overrides.length ?? 3
+  const inertia = shape === 'beam'
+    ? beamInertia(mass, length)
+    : shape === 'box'
+      ? mass * ((overrides.width ?? radius * 2) ** 2 + (overrides.height ?? radius * 2) ** 2) / 12
+      : 0.5 * mass * radius ** 2
+  return {
+    id,
+    name: overrides.name ?? (shape === 'beam' ? 'Beam' : 'Body'),
+    shape,
+    mass,
+    radius,
+    width: overrides.width ?? radius * 2,
+    height: overrides.height ?? radius * 2,
+    length,
+    thickness: overrides.thickness ?? 0.18,
+    mode: shape === 'beam' ? (overrides.mode ?? 'dynamic') : undefined,
+    autoLength: shape === 'beam' ? (overrides.autoLength ?? false) : undefined,
+    pinPortId: shape === 'beam' ? (overrides.pinPortId ?? `${id}:center`) : undefined,
+    position: overrides.position ?? { x: 0, y: 2 },
+    velocity: overrides.velocity ?? { x: 0, y: 0 },
+    acceleration: overrides.acceleration ?? { x: 0, y: 0 },
+    angle: overrides.angle ?? 0,
+    angularVelocity: overrides.angularVelocity ?? 0,
+    angularAcceleration: overrides.angularAcceleration ?? 0,
+    inertia: overrides.inertia ?? inertia,
+    assemblyInertia: overrides.assemblyInertia ?? inertia,
+    restitution: overrides.restitution ?? 0.35,
+    friction: overrides.friction ?? 0.18,
+    color: overrides.color ?? (shape === 'beam' ? '#171717' : '#ffb35c'),
+    locked: overrides.locked ?? false,
+    gravityEnabled: overrides.gravityEnabled ?? true,
+    gravityMultiplier: overrides.gravityMultiplier ?? 1,
+  }
+}
+
+export function createTrack(overrides = {}) {
+  return {
+    id: overrides.id ?? `track-${crypto.randomUUID()}`,
+    name: overrides.name ?? 'Ramp',
+    type: 'segment',
+    center: overrides.center ?? { x: 0, y: 0 },
+    angle: overrides.angle ?? 0,
+    length: overrides.length ?? 6,
+    thickness: overrides.thickness ?? 0.18,
+    friction: overrides.friction ?? 0.12,
+    restitution: overrides.restitution ?? 0.2,
+    startEnd: overrides.startEnd ?? 'start',
+  }
+}
+
+export function createConnector(type = 'spring', overrides = {}) {
+  const length = overrides.length ?? overrides.restLength ?? 2
+  return {
+    id: overrides.id ?? `${type}-${crypto.randomUUID()}`,
+    name: overrides.name ?? (type === 'rope' ? 'Rope' : 'Spring'),
+    type,
+    a: overrides.a ?? { type: 'world', position: { x: -1, y: 2 } },
+    b: overrides.b ?? { type: 'world', position: { x: 1, y: 2 } },
+    length,
+    restLength: overrides.restLength ?? length,
+    stiffness: overrides.stiffness ?? 8,
+    damping: overrides.damping ?? 0.08,
+  }
+}
+
+export function defaultPorts(owner) {
+  if (owner.shape === 'beam') return [
+    { id: `${owner.id}:start`, ownerId: owner.id, name: 'Start', kind: 'structural', localPosition: { x: -owner.length / 2, y: 0 } },
+    { id: `${owner.id}:center`, ownerId: owner.id, name: 'Center', kind: 'structural', localPosition: { x: 0, y: 0 } },
+    { id: `${owner.id}:end`, ownerId: owner.id, name: 'End', kind: 'structural', localPosition: { x: owner.length / 2, y: 0 } },
+  ]
+  if (owner.type === 'segment') return [
+    { id: `${owner.id}:start`, ownerId: owner.id, name: 'Start', kind: 'track', localPosition: { x: -owner.length / 2, y: owner.thickness / 2 } },
+    { id: `${owner.id}:center`, ownerId: owner.id, name: 'Center', kind: 'track', localPosition: { x: 0, y: owner.thickness / 2 } },
+    { id: `${owner.id}:end`, ownerId: owner.id, name: 'End', kind: 'track', localPosition: { x: owner.length / 2, y: owner.thickness / 2 } },
+  ]
+  const halfWidth = (owner.shape === 'box' ? owner.width : owner.radius * 2) / 2
+  const halfHeight = (owner.shape === 'box' ? owner.height : owner.radius * 2) / 2
+  return [
+    { id: `${owner.id}:center`, ownerId: owner.id, name: 'Center', kind: 'connector', localPosition: { x: 0, y: 0 } },
+    { id: `${owner.id}:north`, ownerId: owner.id, name: 'North', kind: 'connector', localPosition: { x: 0, y: halfHeight } },
+    { id: `${owner.id}:east`, ownerId: owner.id, name: 'East', kind: 'connector', localPosition: { x: halfWidth, y: 0 } },
+    { id: `${owner.id}:south`, ownerId: owner.id, name: 'South', kind: 'connector', localPosition: { x: 0, y: -halfHeight } },
+    { id: `${owner.id}:west`, ownerId: owner.id, name: 'West', kind: 'connector', localPosition: { x: -halfWidth, y: 0 } },
+  ]
+}
+
+export function allPorts(scenario) {
+  return [...(scenario.bodies ?? []), ...(scenario.tracks ?? [])].flatMap(defaultPorts).concat(scenario.ports ?? [])
+}
+
+export function endpointWorldPosition(scenario, endpoint) {
+  if (endpoint?.type === 'world') return endpoint.position
+  if (endpoint?.type !== 'port') return null
+  const port = allPorts(scenario).find((candidate) => candidate.id === endpoint.portId && candidate.ownerId === endpoint.ownerId)
+  const owner = [...scenario.bodies, ...scenario.tracks].find((candidate) => candidate.id === endpoint.ownerId)
+  if (!port || !owner) return null
+  const angle = owner.angle ?? 0
+  const origin = owner.position ?? owner.center
+  return {
+    x: origin.x + port.localPosition.x * Math.cos(angle) - port.localPosition.y * Math.sin(angle),
+    y: origin.y + port.localPosition.x * Math.sin(angle) + port.localPosition.y * Math.cos(angle),
+  }
+}
+
+export function fitAutoLengthBeams(scenario) {
+  for (const beam of scenario.bodies.filter((body) => body.shape === 'beam' && body.autoLength)) {
+    const connectedPoint = (portId) => {
+      const joint = scenario.joints.find((candidate) => candidate.a.portId === portId || candidate.b.portId === portId)
+      if (!joint) return null
+      return endpointWorldPosition(scenario, joint.a.portId === portId ? joint.b : joint.a)
+    }
+    const start = connectedPoint(`${beam.id}:start`)
+    const end = connectedPoint(`${beam.id}:end`)
+    if (!start || !end) continue
+    beam.position = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+    beam.length = Math.max(0.05, Math.hypot(end.x - start.x, end.y - start.y))
+    beam.angle = Math.atan2(end.y - start.y, end.x - start.x)
+    beam.inertia = beamInertia(beam.mass, beam.length)
+  }
+  return scenario
+}
+
+function fromLegacyIncline(constraint) {
+  const dx = constraint.end.x - constraint.start.x
+  const dy = constraint.end.y - constraint.start.y
+  return createTrack({
+    id: constraint.id,
+    name: 'Ramp',
+    center: { x: (constraint.start.x + constraint.end.x) / 2, y: (constraint.start.y + constraint.end.y) / 2 },
+    angle: Math.atan2(dy, dx),
+    length: Math.hypot(dx, dy),
+    thickness: 0.16,
+    friction: constraint.friction ?? (constraint.rolling ? 0.18 : 0.06),
+    restitution: constraint.restitution ?? 0.1,
+  })
+}
+
+export function migrateScenario(input) {
+  if (!input || typeof input !== 'object') return input
+  if (input.version === SCENARIO_VERSION) {
+    const scenario = copy(input)
+    scenario.gravity ??= { g: 9.80665, direction: { x: 0, y: -1 }, enabled: false }
+    scenario.tracks ??= []
+    scenario.ports ??= []
+    scenario.joints ??= []
+    scenario.connectors ??= []
+    scenario.forces ??= []
+    scenario.constraints ??= []
+    scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
+    return scenario
+  }
+  if (input.version !== 1) return copy(input)
+
+  const source = copy(input)
+  const masterGravity = source.forces?.find((force) => force.type === 'gravity' && !force.bodyId)
+  const bodyGravity = new Map((source.forces ?? []).filter((force) => force.type === 'gravity' && force.bodyId).map((force) => [force.bodyId, force]))
+  const bodies = (source.bodies ?? []).map((body) => createBody({
+    ...body,
+    gravityEnabled: Boolean(masterGravity || bodyGravity.has(body.id)),
+    gravityMultiplier: bodyGravity.has(body.id) && masterGravity ? bodyGravity.get(body.id).g / masterGravity.g : 1,
+  }))
+  const connectors = (source.forces ?? []).filter((force) => force.type === 'spring').map((force) => createConnector('spring', {
+    id: force.id,
+    a: { type: 'world', position: force.anchor },
+    b: { type: 'port', ownerId: force.bodyId, portId: `${force.bodyId}:center` },
+    restLength: force.restLength,
+    length: force.restLength,
+    stiffness: force.stiffness,
+    damping: force.damping,
+  }))
+  return {
+    ...source,
+    version: SCENARIO_VERSION,
+    gravity: { g: masterGravity?.g ?? 9.80665, direction: { x: 0, y: -1 }, enabled: Boolean(masterGravity) },
+    bodies,
+    forces: (source.forces ?? []).filter((force) => !['gravity', 'spring'].includes(force.type)),
+    constraints: (source.constraints ?? []).filter((constraint) => constraint.type === 'ground'),
+    tracks: (source.constraints ?? []).filter((constraint) => constraint.type === 'incline').map(fromLegacyIncline),
+    connectors,
+    ports: [],
+    joints: [],
+  }
+}
+
+function validateEndpoint(endpoint, ownerIds, portIds, label, errors) {
+  if (!endpoint || !['world', 'port'].includes(endpoint.type)) {
+    errors.push(`${label} requires a world or port endpoint.`)
+    return
+  }
+  if (endpoint.type === 'world' && !isFiniteVector(endpoint.position)) errors.push(`${label} requires a finite world position.`)
+  if (endpoint.type === 'port' && (!ownerIds.has(endpoint.ownerId) || !portIds.has(endpoint.portId))) errors.push(`${label} references an unknown port.`)
+}
+
+export function validateScenario(input) {
+  const scenario = migrateScenario(input)
   const errors = []
-  if (!scenario || typeof scenario !== 'object') return { valid: false, errors: ['Scenario must be an object.'] }
+  if (!scenario || typeof scenario !== 'object') return { valid: false, errors: ['Scenario must be an object.'], scenario }
   if (scenario.version !== SCENARIO_VERSION) errors.push(`Scenario version must be ${SCENARIO_VERSION}.`)
   if (!scenario.id || !scenario.name) errors.push('Scenario requires an id and name.')
   if (!Object.values(INTEGRATORS).includes(scenario.integrator)) errors.push('Scenario has an unsupported integrator.')
   if (!finitePositive(scenario.fixedStep)) errors.push('Scenario fixedStep must be positive.')
   if (!Array.isArray(scenario.bodies) || scenario.bodies.length === 0) errors.push('Scenario requires at least one body.')
+  if (!scenario.gravity || !finiteNonNegative(scenario.gravity.g) || !isFiniteVector(scenario.gravity.direction)) errors.push('World gravity requires a non-negative magnitude and finite direction.')
 
   const ids = new Set()
   for (const body of scenario.bodies ?? []) {
@@ -25,63 +234,64 @@ export function validateScenario(scenario) {
     if (!finitePositive(body.mass)) errors.push(`Body ${body.id} mass must be positive.`)
     if (!isFiniteVector(body.position) || !isFiniteVector(body.velocity)) errors.push(`Body ${body.id} requires finite position and velocity.`)
     if (!finitePositive(body.radius)) errors.push(`Body ${body.id} radius must be positive.`)
+    if (!Number.isFinite(body.gravityMultiplier)) errors.push(`Body ${body.id} gravity multiplier must be finite.`)
+    if (body.shape === 'beam' && (!BEAM_MODES.includes(body.mode) || !finitePositive(body.length) || !finitePositive(body.thickness))) errors.push(`Beam ${body.id} has invalid mode or dimensions.`)
   }
-
+  for (const track of scenario.tracks ?? []) {
+    if (!track.id || ids.has(track.id)) errors.push(`Track id must be unique: ${track.id ?? 'missing'}.`)
+    ids.add(track.id)
+    if (track.type !== 'segment' || !isFiniteVector(track.center) || !finitePositive(track.length) || !finitePositive(track.thickness) || !Number.isFinite(track.angle)) errors.push(`Track ${track.id} has invalid geometry.`)
+  }
+  const ports = allPorts(scenario)
+  const portIds = new Set()
+  for (const port of ports) {
+    if (!port.id || portIds.has(port.id)) errors.push(`Port id must be unique: ${port.id ?? 'missing'}.`)
+    portIds.add(port.id)
+    if (!ids.has(port.ownerId) || !isFiniteVector(port.localPosition)) errors.push(`Port ${port.id} has an invalid owner or position.`)
+  }
   for (const force of scenario.forces ?? []) {
     if (!FORCE_TYPES.includes(force.type)) errors.push(`Unsupported force type: ${force.type}.`)
     if (force.bodyId && !ids.has(force.bodyId)) errors.push(`Force references unknown body: ${force.bodyId}.`)
   }
-
   for (const constraint of scenario.constraints ?? []) {
     if (!CONSTRAINT_TYPES.includes(constraint.type)) errors.push(`Unsupported constraint type: ${constraint.type}.`)
     if (constraint.bodyId && !ids.has(constraint.bodyId)) errors.push(`Constraint references unknown body: ${constraint.bodyId}.`)
   }
-
-  return { valid: errors.length === 0, errors }
+  for (const connector of scenario.connectors ?? []) {
+    if (!CONNECTOR_TYPES.includes(connector.type)) errors.push(`Connector ${connector.id} has an unsupported type.`)
+    if (!finitePositive(connector.type === 'rope' ? connector.length : connector.restLength)) errors.push(`Connector ${connector.id} requires a positive length.`)
+    validateEndpoint(connector.a, ids, portIds, `Connector ${connector.id}`, errors)
+    validateEndpoint(connector.b, ids, portIds, `Connector ${connector.id}`, errors)
+  }
+  const jointPairs = new Set()
+  const jointPortUsage = new Set()
+  for (const joint of scenario.joints ?? []) {
+    if (!JOINT_TYPES.includes(joint.type)) errors.push(`Joint ${joint.id} has an unsupported type.`)
+    validateEndpoint(joint.a, ids, portIds, `Joint ${joint.id}`, errors)
+    validateEndpoint(joint.b, ids, portIds, `Joint ${joint.id}`, errors)
+    const key = [joint.a?.portId, joint.b?.portId].sort().join('|')
+    if (jointPairs.has(key)) errors.push(`Joint ${joint.id} duplicates an existing connection.`)
+    jointPairs.add(key)
+    for (const endpoint of [joint.a, joint.b]) if (endpoint?.type === 'port') {
+      if (jointPortUsage.has(endpoint.portId)) errors.push(`Port ${endpoint.portId} is over-constrained by multiple joints.`)
+      jointPortUsage.add(endpoint.portId)
+    }
+  }
+  return { valid: errors.length === 0, errors, scenario }
 }
 
-export function cloneScenario(scenario) {
-  return structuredClone(scenario)
-}
+export function cloneScenario(scenario) { return copy(scenario) }
 
-export function serializeScenario(scenario) {
-  const result = validateScenario(scenario)
+export function serializeScenario(input) {
+  const result = validateScenario(input)
   if (!result.valid) throw new TypeError(result.errors.join(' '))
-  return JSON.stringify(scenario, null, 2)
+  return JSON.stringify(result.scenario, null, 2)
 }
 
 export function deserializeScenario(serialized) {
   let scenario
-  try {
-    scenario = JSON.parse(serialized)
-  } catch {
-    throw new SyntaxError('Scenario is not valid JSON.')
-  }
+  try { scenario = JSON.parse(serialized) } catch { throw new SyntaxError('Scenario is not valid JSON.') }
   const result = validateScenario(scenario)
   if (!result.valid) throw new TypeError(result.errors.join(' '))
-  return scenario
-}
-
-export function createBody(overrides = {}) {
-  const radius = overrides.radius ?? 0.35
-  const mass = overrides.mass ?? 1
-  return {
-    id: overrides.id ?? `body-${crypto.randomUUID()}`,
-    name: overrides.name ?? 'Body',
-    shape: overrides.shape ?? 'circle',
-    mass,
-    radius,
-    width: overrides.width ?? radius * 2,
-    height: overrides.height ?? radius * 2,
-    position: overrides.position ?? { x: 0, y: 2 },
-    velocity: overrides.velocity ?? { x: 0, y: 0 },
-    acceleration: overrides.acceleration ?? { x: 0, y: 0 },
-    angle: overrides.angle ?? 0,
-    angularVelocity: overrides.angularVelocity ?? 0,
-    angularAcceleration: overrides.angularAcceleration ?? 0,
-    inertia: overrides.inertia ?? 0.5 * mass * radius ** 2,
-    restitution: overrides.restitution ?? 0.8,
-    color: overrides.color ?? '#ffb35c',
-    locked: overrides.locked ?? false,
-  }
+  return result.scenario
 }

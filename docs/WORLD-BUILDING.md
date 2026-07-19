@@ -1,27 +1,37 @@
-# World-building controls
+# Planar assembly editor
 
-Mechanarium separates visual references from physical environment objects. A faint grid is only a coordinate reference; the status label says `ground on` when a collision ground is active and `reference grid only` when it is not.
+Mechanarium renders a three-dimensional workspace while solving mechanics in the visible x/y plane. The coordinate grid is a reference; only an enabled ground, ramp, or track-mode beam is solid.
 
-## Bodies and the default environment
+## Construction workflow
 
-Adding a sphere or block to a world without an environmental force creates Earth gravity (`9.80665 m/s²`) and a ground at `y = -3.6 m`. This prevents a newly constructed body from silently floating or falling through a visual reference grid. Gravity and Floor are explicit on/off buttons in the left builder.
+Construction and simulation share one workspace. Pause before changing topology. Every structural edit resets time and telemetry; Run locks fields, gizmos, connector handles, deletion, and port operations.
 
-## Editing surfaces and forces
+- Add spheres, blocks, ramps, springs, ropes, beams, or attachment points from **Build**.
+- Drag bodies or track centers. Select a ramp or beam to reveal yellow angle and length handles and a green start marker.
+- Hold Shift while dragging the angle handle for 15Â° snapping.
+- Use arrow keys to translate, brackets to rotate, minus/equals to resize, D to disconnect a selected connector, and Delete to remove.
+- Choose **Place selected body at start** on a track. This is placement assistance only and never becomes an invisible rail.
 
-The right rail lists every active gravity field, ground, ramp, spring, and attractor under **World forces & surfaces**. Pause the simulation to edit values or remove an item. Ramp start/end coordinates change its length, slope, and position; a ramp can also be dragged directly in the 3D world while paused.
+## Gravity
 
-Generic ramps only affect bodies that contact their visible segment. A ramp linked to a prepared experiment can remain body-specific. Rolling ramps include rotational inertia through the effective mass `m + I/r²`.
+Master gravity provides magnitude and direction. Each dynamic object independently enables it and applies a multiplier. Acceleration is `g Ã— multiplier`; mass does not change gravitational acceleration. Orbital and force-free presets disable uniform gravity on their bodies.
 
-## Building an orbit manually
+## Ports, joints, and snapping
 
-1. Add or select a body and place it away from the desired center.
-2. Add **Attractor** from the left builder.
-3. Edit its center and strength in the right rail.
-4. Choose **Prepare clean circular orbit**.
-5. Run the world and inspect the Kinematics view.
+Bodies derive center and cardinal ports. Tracks and beams derive start, center, and end ports. Custom attachment points are serialized and may be renamed or repositioned. Connector and track endpoints use an 18-pixel snap radius that remains consistent while zooming.
 
-Orbit preparation gives the linked body the correct perpendicular circular-orbit speed `sqrt(strength / radius)` and removes uniform gravity and the ground so they do not interfere. All resulting body, force, and environment values remain editable.
+Select a port and choose **Use as first structural port**, then select a port on another entity and choose **Rigid to first** or **Pin to first**. A port may also be pinned to its current world position. Rigid groups report composite inertia; pins preserve a common point while allowing rotation.
 
-## Measurement views
+## Springs, ropes, and beams
 
-**Energy** presents kinetic, potential, total energy, momentum, and conservation error. **Kinematics** presents the selected body’s position, velocity, acceleration, speed, displacement, time, and history. CSV export includes both kinematics and energy columns.
+Spring and rope endpoints may be world anchors or port references. Springs apply forces and off-center torque. Ropes enforce a maximum length, carry tension only, and go slack below that length.
+
+Beam modes are:
+
+- **Dynamic** â€” free rigid body with inertia, collisions, and optional gravity.
+- **Pinned** â€” dynamic beam with an end pin created when the mode is selected.
+- **Track** â€” immovable solid segment; dynamic gravity and inertia are inactive.
+
+Auto-length spans a beam between two connected end ports during paused editing and preserves that length when Run begins.
+
+Straight track segments are the current scope. Loops and spline tracks will reuse the same port schema in a later milestone.

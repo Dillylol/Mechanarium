@@ -1,13 +1,14 @@
 # Project status
 
-As of 2026-07-18, Mechanarium has completed Milestones 0–3 and reached MVP status.
+As of 2026-07-19, Mechanarium has completed the planar assembly and SHM milestone beyond the original MVP.
 
 | Milestone | Status | Evidence |
 | --- | --- | --- |
-| 0 — Baseline and decisions | Complete | Reproducible environment, baseline test/build, conventions, ADR |
-| 1 — Correctness foundation | Complete | Fixed-step clock, integrators, metrics, analytic fixtures |
-| 2 — General mechanics model | Complete | Scenario v1, forces, constraints, collisions, five presets |
-| 3 — Sandbox interaction | Complete | 3D laboratory, editable world forces/surfaces, agent dock, energy/kinematics telemetry, export, accessibility |
-| 4 — Performance architecture | In progress | Decoupled 120 Hz physics/30 Hz UI publication, render interpolation, reusable graphics buffers; worker/Wasm migration remains future work |
-| 5 — Guided inquiry | Not started | Deterministic observation prompts are the only current guidance |
-| 6 — Release hardening | Not started | Deployment and broad device audit remain future work |
+| 0 â€” Baseline and decisions | Complete | Reproducible environment, baseline test/build, conventions, ADR |
+| 1 â€” Correctness foundation | Complete | Fixed-step clock, integrators, metrics, analytic fixtures |
+| 2 â€” General mechanics model | Complete | Versioned scenarios, forces, constraints, collisions, initial presets |
+| 3 â€” Sandbox interaction | Complete | 3D laboratory, builder, agent dock, telemetry, export, accessibility |
+| 4 â€” Planar assembly and SHM | Complete | Scenario v2, beams, ports, joints, springs/ropes, solid tracks, transform gizmos, four SHM systems, 42 tests |
+| 5 â€” Performance architecture | In progress | 120 Hz physics/30 Hz UI publication and reusable graphics; worker/Wasm migration remains future work |
+| 6 â€” Guided inquiry | Not started | Deterministic observation prompts are the only current guidance |
+| 7 â€” Release hardening | Not started | Deployment and broad device audit remain future work |

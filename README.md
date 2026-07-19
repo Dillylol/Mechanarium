@@ -2,22 +2,19 @@
 
 **Build worlds. Discover the laws that move them.**
 
-Mechanarium is an interactive three-dimensional mechanics laboratory for learning physics through construction, experimentation, measurement, and guided observation.
+Mechanarium is an interactive three-dimensional mechanics laboratory for learning physics through construction, experimentation, measurement, and guided observation. Its workspace is visually 3D while its deterministic mechanics remain planar.
 
-## MVP capabilities
+## Current capabilities
 
-- Deterministic 120 Hz fixed-step simulation independent of rendering
-- Explicit Euler, Symplectic Euler, and Velocity Verlet integration
-- Versioned JSON scenarios with validation and round-trip import/export
-- Gravity, uniform force, drag, springs, central attraction, ground, inclines, and circle collisions
-- Projectile, momentum, rolling, oscillation, and orbital presets
-- Three.js world with an orbit camera, direct body manipulation, force vectors, tracks, and a monochrome measurement grid
-- Left-hand world builder with explicit gravity/ground toggles, editable ramps, springs, orbital attractors, and prepared experiments
-- Persistent world-agent dock for natural-language construction and Socratic guidance
-- Body inspector for mass, size, position, velocity, restitution, and rotation
-- Switchable energy and kinematics measurements with force vectors, optional trails, history plots, momentum, and conservation error
-- Local scenario saving, portable scenario JSON, and SI-labelled telemetry CSV
-- Responsive interface and accessible tabular body data
+- Deterministic 120 Hz fixed-step simulation with 30 Hz React publication and interpolated Three.js rendering.
+- Scenario v2 JSON with automatic v1 migration, validation, import/export, exact port references, and topology diagnostics.
+- Master and per-object gravity participation, central forces, massless springs, slack/tension ropes, contacts, friction, restitution, pins, and rigid welds.
+- Dynamic, pinned, and track beams with `I = mLÂ²/12`, auto-length, and compound inertia through the parallel-axis theorem.
+- Straight solid ramps/tracks whose rendered and collision geometry are identicalâ€”no hidden rails or body-specific platforms.
+- Paused KSP-inspired assembly editing: direct translation, angle/length gizmos, start ports, snapping, connector handles, custom attachment points, and keyboard controls.
+- Nine prepared experiments, including inclined spring, rope pendulum, uniform-beam physical pendulum, and compound beam SHM systems.
+- Energy and kinematics telemetry, connector/beam/joint diagnostics, force vectors, trails, accessible tables, Scenario JSON, and SI CSV.
+- Local deterministic and optional OpenAI-backed world agents with Scenario v2 assembly actions.
 
 ## Development
 
@@ -28,11 +25,9 @@ npm install
 npm run dev
 ```
 
-The local application uses the `/Mechanarium/` base path.
+Open `http://127.0.0.1:5173/Mechanarium/`.
 
-### GPT world agent
-
-Copy `.env.example` to `.env`, set the server-side `OPENAI_API_KEY`, and restart `npm run dev`. The key is read only by the local agent server and is never exposed through Vite browser variables. Without a key, the same chat interface uses a deterministic local world-building planner.
+For the GPT world agent, copy `.env.example` to `.env`, set the server-side `OPENAI_API_KEY`, and restart. The key is never exposed through Vite. Without it, the same dock uses the local planner.
 
 ## Quality gates
 
@@ -44,18 +39,16 @@ npm run build
 npm run check
 ```
 
-The completed foundation and studio redesign have 36 automated tests. See [`docs/TESTING.md`](./docs/TESTING.md) for the tested behaviors and latest results.
+The current gate has 42 tests across nine files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
 
 ## Documentation
 
-- [`ProjectGroundwork.md`](./ProjectGroundwork.md) — objectives, boundaries, milestones, decisions, and risks
-- [`ProjectOutline.md`](./ProjectOutline.md) — extended architecture and research roadmap
-- [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) — units and physics conventions
-- [`docs/SCENARIO-FORMAT.md`](./docs/SCENARIO-FORMAT.md) — scenario v1 contract
-- [`docs/WORLD-BUILDING.md`](./docs/WORLD-BUILDING.md) — forces, surfaces, ramp editing, and manual orbit construction
-- [`docs/milestones/`](./docs/milestones/) — build/test/report record for each completed milestone
-- [`docs/decisions/`](./docs/decisions/) — architecture decision records
+- [`ProjectGroundwork.md`](./ProjectGroundwork.md) â€” objectives, boundaries, milestones, decisions, and risks
+- [`ProjectOutline.md`](./ProjectOutline.md) â€” extended architecture and research roadmap
+- [`docs/SCENARIO-FORMAT.md`](./docs/SCENARIO-FORMAT.md) â€” Scenario v2 and migration contract
+- [`docs/WORLD-BUILDING.md`](./docs/WORLD-BUILDING.md) â€” assembly editing, ports, connectors, tracks, and keyboard workflow
+- [`docs/milestones/MILESTONE-4.md`](./docs/milestones/MILESTONE-4.md) â€” build/test/report record for this milestone
 
 ## Current boundary
 
-Milestones 0–3 form the MVP. Worker execution, Rust/WebAssembly optimization, AI-assisted inquiry, and release hardening remain future milestones. The earlier `physicsThing` repository is reference material only; all Mechanarium work belongs here.
+Physics is planar. Springs and ropes are ideal and massless. Straight tracks ship now; full 3D joints, breakable materials, loops, and continuous spline tracks remain later work on the same Scenario v2 port schema.

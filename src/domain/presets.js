@@ -1,8 +1,8 @@
 import { INTEGRATORS } from '../physics/constants.js'
-import { cloneScenario, createBody, SCENARIO_VERSION } from './scenario.js'
+import { cloneScenario, createBody, createConnector, createTrack, migrateScenario, SCENARIO_VERSION } from './scenario.js'
 
 const common = {
-  version: SCENARIO_VERSION,
+  version: 1,
   fixedStep: 1 / 120,
   integrator: INTEGRATORS.VELOCITY_VERLET,
   bounds: { minX: -8, maxX: 8, minY: -4.5, maxY: 7.5 },
@@ -68,6 +68,65 @@ const presets = [
     forces: [{ id: 'central-gravity', type: 'central', bodyId: 'satellite', center: { x: 0, y: 0 }, strength: 19.36, softening: 0.05 }],
     constraints: [],
   },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    id: 'inclined-spring-oscillator',
+    name: 'Inclined Spring Oscillator',
+    category: 'Simple Harmonic Motion',
+    description: 'A spring-driven mass oscillates along a solid inclined surface.',
+    lesson: 'Gravity shifts equilibrium while the spring sets the oscillation period.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [createBody({ id: 'incline-mass', name: 'Oscillator mass', mass: 1, radius: 0.42, position: { x: 0.483, y: 0.718 }, color: '#f2cf00' })],
+    tracks: [createTrack({ id: 'incline-track', name: 'Incline', center: { x: 0, y: 0 }, angle: Math.PI / 9, length: 8, friction: 0.01 })],
+    connectors: [createConnector('spring', { id: 'incline-spring', a: { type: 'world', position: { x: -2.994, y: -0.547 } }, b: { type: 'port', ownerId: 'incline-mass', portId: 'incline-mass:center' }, restLength: 3.1, stiffness: 9, damping: 0.02 })],
+    ports: [], joints: [], forces: [], constraints: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    id: 'rope-pendulum',
+    name: 'Massless-Rope Pendulum',
+    category: 'Simple Harmonic Motion',
+    description: 'A tension-only inextensible rope supports a pendulum bob.',
+    lesson: 'At small angles, the period depends on rope length and gravity rather than bob mass.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [createBody({ id: 'pendulum-bob', name: 'Pendulum bob', radius: 0.38, position: { x: 2.85 * Math.sin(0.25), y: 4.2 - 2.85 * Math.cos(0.25) }, color: '#f2cf00' })],
+    connectors: [createConnector('rope', { id: 'pendulum-rope', a: { type: 'world', position: { x: 0, y: 4.2 } }, b: { type: 'port', ownerId: 'pendulum-bob', portId: 'pendulum-bob:center' }, length: 2.85 })],
+    tracks: [], ports: [], joints: [], forces: [], constraints: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    id: 'physical-pendulum',
+    name: 'Uniform-Beam Pendulum',
+    category: 'Simple Harmonic Motion',
+    description: 'A uniform inertial beam rotates around a frictionless end pin.',
+    lesson: 'The period follows the beam moment of inertia about its pivot.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [createBody({ id: 'pendulum-beam', name: 'Uniform beam', shape: 'beam', mode: 'pinned', mass: 2, length: 4, angle: -Math.PI / 2 + 0.24, position: { x: 2 * Math.sin(0.24), y: 4 - 2 * Math.cos(0.24) }, color: '#171717' })],
+    joints: [{ id: 'beam-pin', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'pendulum-beam', portId: 'pendulum-beam:start' } }],
+    tracks: [], ports: [], connectors: [], forces: [], constraints: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    id: 'compound-pendulum',
+    name: 'Compound Beam Oscillator',
+    category: 'Simple Harmonic Motion',
+    description: 'A beam and attached sphere act as one compound inertial assembly.',
+    lesson: 'Attached mass changes the center of mass and adds inertia through the parallel-axis theorem.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [
+      createBody({ id: 'compound-beam', name: 'Inertial beam', shape: 'beam', mode: 'pinned', mass: 1.8, length: 4, angle: -Math.PI / 2 + 0.22, position: { x: 2 * Math.sin(0.22), y: 4 - 2 * Math.cos(0.22) }, color: '#171717' }),
+      createBody({ id: 'compound-mass', name: 'Attached sphere', mass: 1.2, radius: 0.48, position: { x: 4 * Math.sin(0.22), y: 4 - 4 * Math.cos(0.22) }, color: '#f2cf00' }),
+    ],
+    joints: [
+      { id: 'compound-pin', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'compound-beam', portId: 'compound-beam:start' } },
+      { id: 'compound-weld', type: 'rigid', a: { type: 'port', ownerId: 'compound-beam', portId: 'compound-beam:end' }, b: { type: 'port', ownerId: 'compound-mass', portId: 'compound-mass:center' } },
+    ],
+    tracks: [], ports: [], connectors: [], forces: [], constraints: [],
+  },
 ]
 
 export function listPresets() {
@@ -77,5 +136,5 @@ export function listPresets() {
 export function getPreset(id) {
   const preset = presets.find((candidate) => candidate.id === id)
   if (!preset) throw new RangeError(`Unknown preset: ${id}`)
-  return cloneScenario(preset)
+  return cloneScenario(migrateScenario(preset))
 }

@@ -3,9 +3,9 @@ import { getPreset, listPresets } from './presets.js'
 
 describe('mechanics presets', () => {
   it('covers the MVP curriculum categories', () => {
-    expect(listPresets().map((preset) => preset.category)).toEqual([
-      'Kinematics', 'Momentum', 'Rotation', 'Oscillations', 'Gravitation',
-    ])
+    expect(listPresets().map((preset) => preset.category)).toEqual(expect.arrayContaining([
+      'Kinematics', 'Momentum', 'Rotation', 'Oscillations', 'Gravitation', 'Simple Harmonic Motion',
+    ]))
   })
 
   it('returns isolated copies', () => {

@@ -6,7 +6,7 @@ const model = process.env.OPENAI_MODEL ?? 'gpt-5.6-terra'
 
 const instructions = `You are the Mechanarium world-building agent and Socratic physics guide.
 Turn the student's request into safe, small edits to the current mechanics scenario.
-Use only the supported action schema. Do not invent unsupported components.
+Use only the supported Scenario v2 action schema. Connections must name exact entity and port ids from the scenario; reject ambiguous graphs in the message instead of guessing.
 When the student asks a conceptual question, prefer one concise observation and one targeted question.
 Use two-subscript interaction language such as F_Earth_on_body and F_track_on_body.
 Never claim a change happened unless you include the corresponding action.
@@ -29,14 +29,19 @@ const tool = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            type: { type: 'string', enum: ['add_body', 'add_constraint', 'add_force', 'remove_force', 'remove_constraint', 'load_preset', 'none'] },
-            target: { type: ['string', 'null'], enum: ['sphere', 'box', 'ramp', 'floor', 'spring', 'gravity', 'central', 'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'orbital-motion', null] },
+            type: { type: 'string', enum: ['add_body', 'add_track', 'add_beam', 'add_connector', 'add_port', 'add_joint', 'connect_endpoint', 'add_constraint', 'add_force', 'remove_force', 'remove_constraint', 'disable_gravity', 'load_preset', 'none'] },
+            target: { type: ['string', 'null'], enum: ['sphere', 'box', 'ramp', 'floor', 'spring', 'rope', 'beam', 'attachment', 'rigid', 'pin', 'gravity', 'central', 'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'orbital-motion', 'inclined-spring-oscillator', 'rope-pendulum', 'physical-pendulum', 'compound-pendulum', null] },
             name: { type: ['string', 'null'] },
             x: { type: ['number', 'null'] },
             y: { type: ['number', 'null'] },
             value: { type: ['number', 'null'] },
+            entityId: { type: ['string', 'null'] },
+            portId: { type: ['string', 'null'] },
+            otherEntityId: { type: ['string', 'null'] },
+            otherPortId: { type: ['string', 'null'] },
+            endpoint: { type: ['string', 'null'], enum: ['a', 'b', null] },
           },
-          required: ['type', 'target', 'name', 'x', 'y', 'value'],
+          required: ['type', 'target', 'name', 'x', 'y', 'value', 'entityId', 'portId', 'otherEntityId', 'otherPortId', 'endpoint'],
         },
       },
     },

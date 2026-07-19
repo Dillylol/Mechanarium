@@ -29,6 +29,9 @@ export default function AgentDock({ scenario, world, onApply }) {
       if (result.actions?.length) onApply(result.actions)
       setReply(result.message)
       setSource(result.source)
+    } catch (error) {
+      setReply(`I could not apply that assembly: ${error.message}`)
+      setSource('validation')
     } finally {
       setBusy(false)
     }
