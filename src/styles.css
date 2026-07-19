@@ -89,6 +89,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 
 .snap-confirmation { position: absolute; right: clamp(18px, 4vw, 56px); bottom: 92px; left: clamp(18px, 4vw, 56px); z-index: 10; min-height: 58px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border: 2px solid var(--black); background: rgba(255,255,255,.97); box-shadow: 0 10px 34px rgba(0,0,0,.14); }
 .snap-confirmation.pending { border-color: var(--green); }
+.snap-confirmation.acquired { border-color: var(--green); }
+.snap-confirmation.acquired .snap-indicator { background: var(--green); }
 .snap-confirmation.armed { border-color: var(--yellow); }
 .snap-confirmation.armed .snap-indicator { color: #111; background: var(--yellow); }
 .snap-confirmation.confirmed { right: auto; grid-template-columns: 34px minmax(0, 1fr); border-color: var(--green); }

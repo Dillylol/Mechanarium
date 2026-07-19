@@ -22,6 +22,8 @@ Bodies derive center and cardinal ports. Tracks and beams derive start, center, 
 
 Snapping is always explicit. Drag a connector endpoint or track endpoint near a compatible port to produce a green target halo and, for tracks, a green ghost preview. The editor leaves the entity where it was released until **Snap to place** is selected. **Keep free** cancels the candidate without creating a connection. A confirmation message names both endpoints after placement.
 
+Picking up a sphere, block, or beam temporarily exposes every port on the other parts as a green mount. Ports on the carried part appear yellow. When any yellow source enters the screen-space snap radius of a green target, the part magnetically aligns and the editor reports **Snap acquired**. Release to preview the rigid mount, then choose **Snap to place** or **Keep free**.
+
 Compound structural joints use the same confirmation flow: choose the first structural port, then follow the persistent yellow **First port armed** card to select the second port. Choose **Preview rigid snap** or **Preview pin snap**, inspect the proposed alignment, and then select **Snap to place**. Custom ports also appear as quick-select chips in **Assembly constraints** so closely overlapping parts do not make port selection finicky. The second owner is translated so the ports coincide only when the snap is confirmed.
 
 Select a port and choose **Use as first structural port**, then select a port on another entity and choose **Rigid to first** or **Pin to first**. A port may also be pinned to its current world position. Rigid groups report composite inertia; pins preserve a common point while allowing rotation.

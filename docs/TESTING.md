@@ -13,6 +13,7 @@ Testing Library fixtures cover the 3D studio, body gravity overrides, ramp cente
 - Load and Run Inclined Spring Oscillator, Massless-Rope Pendulum, Uniform-Beam Pendulum, and Compound Beam Oscillator.
 - Manually add a beam, attachment point, and rope; move a connector endpoint near a highlighted port, verify no connection exists before confirmation, then select **Snap to place**.
 - Move one track endpoint near another and verify the target halo, ghost placement, **Keep free**, and confirmed-placement feedback.
+- Pick up a sphere near a beam and verify that all foreign ports appear green, carried-part ports appear yellow, the closest pair magnetically aligns, and release produces a named rigid-mount proposal.
 - Rotate and resize a ramp/beam with gizmos and verify the body rests on the visible top face.
 - Confirm Run hides/locks structural controls, Pause restores them, and the next edit resets time and telemetry.
 - Leave the compound assembly running for at least 60 seconds and inspect console, interaction responsiveness, and memory behavior.
@@ -22,7 +23,7 @@ Testing Library fixtures cover the 3D studio, body gravity overrides, ramp cente
 Run on 2026-07-19:
 
 - lint: passed;
-- automated tests: 44 passed across 9 files;
+- automated tests: 45 passed across 10 files;
 - production build: passed;
 - 60-second numerical soak: passed with finite state and bounded energy error.
 

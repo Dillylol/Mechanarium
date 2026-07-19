@@ -25,6 +25,43 @@ function nearestPort(world, position, radius, predicate = () => true) {
     .sort((a, b) => a.distance - b.distance)[0] ?? null
 }
 
+function rotateLocal(position, angle) {
+  return {
+    x: position.x * Math.cos(angle) - position.y * Math.sin(angle),
+    y: position.x * Math.sin(angle) + position.y * Math.cos(angle),
+  }
+}
+
+function findBodySnapCandidate(world, bodyId, position, radius) {
+  const body = world.bodies.find((candidate) => candidate.id === bodyId)
+  if (!body) return null
+  const sourcePorts = world.ports.filter((port) => port.ownerId === bodyId)
+  const targetPorts = world.ports.filter((port) => port.ownerId !== bodyId)
+  let best = null
+  for (const sourcePort of sourcePorts) {
+    const offset = rotateLocal(sourcePort.localPosition, body.angle ?? 0)
+    const sourcePosition = { x: position.x + offset.x, y: position.y + offset.y }
+    for (const targetPort of targetPorts) {
+      const target = resolvePort(world, targetPort.id)
+      if (!target) continue
+      const distance = Math.hypot(target.x - sourcePosition.x, target.y - sourcePosition.y)
+      if (distance > radius || best && distance >= best.distance) continue
+      best = {
+        bodyId, sourcePort, targetPort, distance,
+        alignedPosition: { x: position.x + target.x - sourcePosition.x, y: position.y + target.y - sourcePosition.y },
+      }
+    }
+  }
+  if (!best) return null
+  return {
+    ...best,
+    sourcePortId: best.sourcePort.id,
+    targetPortId: best.targetPort.id,
+    sourceLabel: portLabel(world, best.sourcePort),
+    targetLabel: portLabel(world, best.targetPort),
+  }
+}
+
 function sampleWorld(world, bodyId) {
   const body = world.bodies.find((candidate) => candidate.id === bodyId) ?? world.bodies[0]
   if (!body) return null
@@ -54,6 +91,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const [connectionPortId, setConnectionPortId] = useState(null)
   const [snapProposal, setSnapProposal] = useState(null)
   const [snapFeedback, setSnapFeedback] = useState('')
+  const [dragSnapCandidate, setDragSnapCandidate] = useState(null)
   const [running, setRunningState] = useState(false)
   const [runError, setRunError] = useState('')
   const [speed, setSpeed] = useState(1)
@@ -108,6 +146,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     setSelectedId(nextWorld.bodies[0].id)
     setConnectionPortId(null)
     setSnapProposal(null)
+    setDragSnapCandidate(null)
     setHistory([]); setRunningState(false); setRunError('')
   }, [])
 
@@ -199,6 +238,33 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const moveConnectorEndpoint = useCallback((connectorId, key, position) => {
     updateConnector(connectorId, { [key]: { type: 'world', position } })
   }, [updateConnector])
+
+  const moveAssemblyPart = useCallback((bodyId, position, snapRadius = 0.45) => {
+    const candidate = findBodySnapCandidate(worldRef.current, bodyId, position, snapRadius)
+    updateBody(bodyId, { position: candidate?.alignedPosition ?? position, velocity: { x: 0, y: 0 } })
+    setDragSnapCandidate((current) => {
+      if (!candidate) return null
+      if (current?.bodyId === candidate.bodyId && current.sourcePortId === candidate.sourcePortId && current.targetPortId === candidate.targetPortId) return current
+      return candidate
+    })
+  }, [updateBody])
+
+  const requestBodySnap = useCallback((bodyId, snapRadius = 0.45) => {
+    const body = worldRef.current.bodies.find((candidate) => candidate.id === bodyId)
+    const candidate = body && findBodySnapCandidate(worldRef.current, bodyId, body.position, snapRadius)
+    setDragSnapCandidate(null)
+    if (!candidate) return
+    setSnapProposal({
+      kind: 'joint', jointType: 'rigid', firstPortId: candidate.targetPort.id, secondPortId: candidate.sourcePort.id,
+      movingOwnerId: bodyId,
+      delta: { x: candidate.alignedPosition.x - body.position.x, y: candidate.alignedPosition.y - body.position.y },
+      sourcePortId: candidate.sourcePort.id, targetPortId: candidate.targetPort.id,
+      sourceLabel: candidate.sourceLabel, targetLabel: candidate.targetLabel,
+      message: `${candidate.sourceLabel} is aligned with ${candidate.targetLabel}. Confirm to mount the parts rigidly.`,
+    })
+  }, [])
+
+  const clearBodySnap = useCallback(() => setDragSnapCandidate(null), [])
 
   const requestConnectorSnap = useCallback((connectorId, key, position, snapRadius = 0.45) => {
     const connector = worldRef.current.connectors.find((candidate) => candidate.id === connectorId)
@@ -379,9 +445,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   }, [connectionPortId, world])
 
   return {
-    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback,
+    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback, dragSnapCandidate,
     running, setRunning, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
-    updateBody, updateTrack, updateConnector, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
+    updateBody, updateTrack, updateConnector, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
     addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, placeBodyAtStart, prepareOrbit,
   }
 }

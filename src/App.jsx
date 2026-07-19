@@ -18,7 +18,7 @@ export default function App() {
   const { world, selectedBody, selectedEntity } = simulation
 
   const updateBody = (changes) => simulation.updateBody(selectedBody.id, changes)
-  const moveBody = (bodyId, position) => simulation.moveEntity(bodyId, position)
+  const moveBody = (bodyId, position, snapRadius) => simulation.moveAssemblyPart(bodyId, position, snapRadius)
   const nudgeSelected = (dx, dy) => {
     if (selectedEntity.type === 'segment') simulation.updateTrack(selectedEntity.id, { center: { x: selectedEntity.center.x + dx, y: selectedEntity.center.y + dy } })
     else if (selectedEntity.position) simulation.updateBody(selectedEntity.id, { position: { x: selectedEntity.position.x + dx, y: selectedEntity.position.y + dy } })
@@ -97,6 +97,8 @@ export default function App() {
               selectedId={simulation.selectedId}
               onSelect={simulation.setSelectedId}
               onMove={moveBody}
+              onRequestBodySnap={simulation.requestBodySnap}
+              onClearBodySnap={simulation.clearBodySnap}
               onMoveConstraint={simulation.moveConstraint}
               onRequestTrackSnap={simulation.requestTrackSnap}
               onTransform={(id, changes) => world.tracks.some((track) => track.id === id) ? simulation.updateTrack(id, changes) : simulation.updateBody(id, changes)}
@@ -110,13 +112,14 @@ export default function App() {
               history={simulation.history}
               overlays={overlays}
               snapProposal={simulation.snapProposal}
+              dragSnapCandidate={simulation.dragSnapCandidate}
             />
-            {(simulation.snapProposal || simulation.connectionPortId || simulation.snapFeedback) && (
-              <div className={`snap-confirmation${simulation.snapProposal ? ' pending' : simulation.connectionPortId ? ' armed' : ' confirmed'}`} role={simulation.snapProposal ? 'dialog' : 'status'} aria-label={simulation.snapProposal ? 'Snap placement' : undefined} aria-live="polite">
-                <div className="snap-indicator" aria-hidden="true">{simulation.snapProposal ? '◎' : simulation.connectionPortId ? '1' : '✓'}</div>
+            {(simulation.snapProposal || simulation.dragSnapCandidate || simulation.connectionPortId || simulation.snapFeedback) && (
+              <div className={`snap-confirmation${simulation.snapProposal ? ' pending' : simulation.dragSnapCandidate ? ' acquired' : simulation.connectionPortId ? ' armed' : ' confirmed'}`} role={simulation.snapProposal ? 'dialog' : 'status'} aria-label={simulation.snapProposal ? 'Snap placement' : undefined} aria-live="polite">
+                <div className="snap-indicator" aria-hidden="true">{simulation.snapProposal ? '◎' : simulation.dragSnapCandidate ? '↳' : simulation.connectionPortId ? '1' : '✓'}</div>
                 <div>
-                  <strong>{simulation.snapProposal ? 'Snap candidate' : simulation.connectionPortId ? 'First port armed' : 'Placement confirmed'}</strong>
-                  <p>{simulation.snapProposal?.message ?? (simulation.connectionPortId ? `${simulation.connectionPortLabel} is mounted and ready. Select a second port, then preview a rigid or pin snap.` : simulation.snapFeedback)}</p>
+                  <strong>{simulation.snapProposal ? 'Snap candidate' : simulation.dragSnapCandidate ? 'Snap acquired' : simulation.connectionPortId ? 'First port armed' : 'Placement confirmed'}</strong>
+                  <p>{simulation.snapProposal?.message ?? (simulation.dragSnapCandidate ? `${simulation.dragSnapCandidate.sourceLabel} → ${simulation.dragSnapCandidate.targetLabel}. Release to preview this mount.` : simulation.connectionPortId ? `${simulation.connectionPortLabel} is mounted and ready. Select a second port, then preview a rigid or pin snap.` : simulation.snapFeedback)}</p>
                 </div>
                 {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
               </div>
