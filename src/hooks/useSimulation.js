@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { beamInertia, createBody, createConnector, createTrack, fitAutoLengthBeams, validateScenario } from '../domain/scenario.js'
+import { createInstrument, deriveGateResults, detectPhotogateCrossings, sampleTrialWorld } from '../domain/instruments.js'
 import { getPreset } from '../domain/presets.js'
 import { createFixedStepClock } from '../physics/clock.js'
 import { connectorState, resolveEndpoint, resolvePort } from '../physics/assembly.js'
@@ -8,7 +9,20 @@ import { createWorld, stepWorld, worldToScenario } from '../physics/world.js'
 
 const HISTORY_LIMIT = 480
 const UI_PUBLISH_INTERVAL_MS = 1000 / 30
+const MAX_TRIAL_SAMPLES = 120000
 const nextId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+const notebookKey = (scenarioId) => `mechanarium:notebook:${scenarioId}`
+const emptyNotebook = (scenarioId) => ({ version: 1, scenarioId, trials: [] })
+const loadNotebook = (scenarioId) => {
+  try {
+    const stored = localStorage.getItem(notebookKey(scenarioId))
+    const parsed = stored && JSON.parse(stored)
+    return parsed?.version === 1 && Array.isArray(parsed.trials) ? parsed : emptyNotebook(scenarioId)
+  } catch {
+    return emptyNotebook(scenarioId)
+  }
+}
 
 function portLabel(world, port) {
   const owner = [...world.bodies, ...world.tracks].find((candidate) => candidate.id === port.ownerId)
@@ -96,12 +110,23 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const [runError, setRunError] = useState('')
   const [speed, setSpeed] = useState(1)
   const [history, setHistory] = useState([])
+  const [recordingStatus, setRecordingStatus] = useState('idle')
+  const [pendingTrial, setPendingTrial] = useState(null)
+  const [notebook, setNotebook] = useState(() => loadNotebook(initial.id))
   const worldRef = useRef(world)
   const selectedRef = useRef(selectedId)
   const clockRef = useRef(createFixedStepClock({ fixedStep: world.fixedStep }))
+  const recordingStatusRef = useRef('idle')
+  const trialDraftRef = useRef(null)
+  const activeTrialRef = useRef(null)
+  const gateStateRef = useRef({})
 
   useEffect(() => { worldRef.current = world }, [world])
   useEffect(() => { selectedRef.current = selectedId }, [selectedId])
+  useEffect(() => { recordingStatusRef.current = recordingStatus }, [recordingStatus])
+  useEffect(() => {
+    try { localStorage.setItem(notebookKey(notebook.scenarioId), JSON.stringify(notebook)) } catch { /* storage is optional */ }
+  }, [notebook])
   useEffect(() => {
     if (!snapFeedback) return undefined
     const timeout = setTimeout(() => setSnapFeedback(''), 3200)
@@ -113,6 +138,56 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     if (sample) setHistory((current) => [...current.slice(-(HISTORY_LIMIT - 1)), sample])
   }, [])
 
+  const setTrialStatus = useCallback((status) => {
+    recordingStatusRef.current = status
+    setRecordingStatus(status)
+  }, [])
+
+  const beginRecording = useCallback(() => {
+    const draft = trialDraftRef.current ?? {}
+    const seed = draft.seed ?? Math.floor(Math.random() * 0xffffffff)
+    activeTrialRef.current = {
+      id: nextId('trial'),
+      name: draft.name?.trim() || `Trial ${Date.now().toString(36).toUpperCase()}`,
+      independentVariable: draft.independentVariable?.trim() || '',
+      independentValue: draft.independentValue ?? '',
+      notes: draft.notes?.trim() || '',
+      seed,
+      startedAt: new Date().toISOString(),
+      samples: sampleTrialWorld(worldRef.current),
+      gateEvents: [],
+      instrumentSnapshot: structuredClone(worldRef.current.instruments),
+    }
+    gateStateRef.current = {}
+    setPendingTrial(null)
+    setTrialStatus('recording')
+  }, [setTrialStatus])
+
+  const captureTrialStep = useCallback((previousWorld, nextWorld) => {
+    const active = activeTrialRef.current
+    if (!active) return
+    const samples = sampleTrialWorld(nextWorld)
+    if (active.samples.length + samples.length <= MAX_TRIAL_SAMPLES) active.samples.push(...samples)
+    const detected = detectPhotogateCrossings(previousWorld, nextWorld, nextWorld.instruments, gateStateRef.current, active.seed + active.gateEvents.length)
+    gateStateRef.current = detected.state
+    active.gateEvents.push(...detected.events)
+  }, [])
+
+  const finishRecording = useCallback((finishedWorld = worldRef.current) => {
+    const active = activeTrialRef.current
+    if (!active) return
+    const completed = {
+      ...active,
+      endedAt: new Date().toISOString(),
+      duration: finishedWorld.time - (active.samples[0]?.time ?? 0),
+      gateResults: deriveGateResults(active.gateEvents, active.instrumentSnapshot),
+    }
+    activeTrialRef.current = null
+    gateStateRef.current = {}
+    setPendingTrial(completed)
+    setTrialStatus('review')
+  }, [setTrialStatus])
+
   useEffect(() => {
     if (!running) return undefined
     let frameId
@@ -123,17 +198,21 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       const elapsed = Math.min(Math.max((now - previous) / 1000, 0), 0.1) * speed
       previous = now
       let next = worldRef.current
-      clockRef.current.advance(elapsed, (dt) => { next = stepWorld(next, dt) })
+      clockRef.current.advance(elapsed, (dt) => {
+        const previousWorld = next
+        next = stepWorld(next, dt)
+        captureTrialStep(previousWorld, next)
+      })
       worldRef.current = next
       if (now - lastPublished >= UI_PUBLISH_INTERVAL_MS || next.time >= next.duration) {
         lastPublished = now; setWorld(next); record(next)
       }
-      if (next.time >= next.duration) setRunningState(false)
+      if (next.time >= next.duration) { finishRecording(next); setRunningState(false) }
       else frameId = requestAnimationFrame(frame)
     }
     frameId = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(frameId)
-  }, [record, running, speed])
+  }, [captureTrialStep, finishRecording, record, running, speed])
 
   const replaceScenario = useCallback((input) => {
     const result = validateScenario(input)
@@ -147,19 +226,48 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     setConnectionPortId(null)
     setSnapProposal(null)
     setDragSnapCandidate(null)
+    activeTrialRef.current = null
+    gateStateRef.current = {}
+    trialDraftRef.current = null
+    setPendingTrial(null)
+    setTrialStatus('idle')
+    setNotebook((current) => current.scenarioId === scenario.id ? current : loadNotebook(scenario.id))
     setHistory([]); setRunningState(false); setRunError('')
-  }, [])
+  }, [setTrialStatus])
 
   const setRunning = useCallback((value) => {
     const next = typeof value === 'function' ? value(running) : value
     if (next && worldRef.current.diagnostics.length) {
       setRunError(worldRef.current.diagnostics.join(' ')); setRunningState(false); return false
     }
+    if (next && recordingStatusRef.current === 'armed') beginRecording()
+    if (!next && recordingStatusRef.current === 'recording') finishRecording()
     setRunError(''); setRunningState(next); return true
-  }, [running])
+  }, [beginRecording, finishRecording, running])
 
   const loadPreset = useCallback((id) => replaceScenario(getPreset(id)), [replaceScenario])
   const reset = useCallback(() => replaceScenario(sourceScenario), [replaceScenario, sourceScenario])
+  const armTrial = useCallback((metadata = {}) => {
+    if (running) return false
+    trialDraftRef.current = { ...metadata }
+    setPendingTrial(null)
+    setTrialStatus('armed')
+    return true
+  }, [running, setTrialStatus])
+  const discardTrial = useCallback(() => {
+    trialDraftRef.current = null
+    activeTrialRef.current = null
+    setPendingTrial(null)
+    setTrialStatus('idle')
+  }, [setTrialStatus])
+  const savePendingTrial = useCallback(() => {
+    if (!pendingTrial) return
+    setNotebook((current) => ({ ...current, trials: [...current.trials, pendingTrial] }))
+    trialDraftRef.current = null
+    setPendingTrial(null)
+    setTrialStatus('idle')
+  }, [pendingTrial, setTrialStatus])
+  const deleteTrial = useCallback((trialId) => setNotebook((current) => ({ ...current, trials: current.trials.filter((trial) => trial.id !== trialId) })), [])
   const stepOnce = useCallback(() => {
     setRunningState(false)
     if (worldRef.current.diagnostics.length) { setRunError(worldRef.current.diagnostics.join(' ')); return }
@@ -343,6 +451,10 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const updateGravity = useCallback((changes) => commitScenarioEdit((scenario) => { scenario.gravity = { ...scenario.gravity, ...changes } }), [commitScenarioEdit])
   const updateConstraint = useCallback((id, changes) => commitScenarioEdit((scenario) => { scenario.constraints = scenario.constraints.map((item) => item.id === id ? { ...item, ...changes } : item) }), [commitScenarioEdit])
   const updateForce = useCallback((id, changes) => commitScenarioEdit((scenario) => { scenario.forces = scenario.forces.map((item) => item.id === id ? { ...item, ...changes } : item) }), [commitScenarioEdit])
+  const updateInstrument = useCallback((id, changes) => {
+    commitScenarioEdit((scenario) => { scenario.instruments = scenario.instruments.map((instrument) => instrument.id === id ? { ...instrument, ...changes } : instrument) })
+    setSelectedId(id)
+  }, [commitScenarioEdit])
   const removeForce = useCallback((id) => commitScenarioEdit((scenario) => { scenario.forces = scenario.forces.filter((item) => item.id !== id) }), [commitScenarioEdit])
   const removeConstraint = useCallback((id) => commitScenarioEdit((scenario) => { scenario.constraints = scenario.constraints.filter((item) => item.id !== id) }), [commitScenarioEdit])
 
@@ -355,6 +467,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       scenario.ports = scenario.ports.filter((port) => port.ownerId !== id && port.id !== id)
       scenario.joints = scenario.joints.filter((joint) => joint.id !== id && joint.a.ownerId !== id && joint.b.ownerId !== id && joint.a.portId !== id && joint.b.portId !== id)
       scenario.forces = scenario.forces.filter((force) => force.bodyId !== id)
+      scenario.instruments = scenario.instruments.filter((instrument) => instrument.id !== id && instrument.targetBodyId !== id)
     })
   }, [commitScenarioEdit])
 
@@ -383,6 +496,12 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         const body = scenario.bodies.find((candidate) => candidate.id === selectedRef.current) ?? scenario.bodies[0]
         scenario.forces.push({ id, type: 'central', bodyId: body.id, center: { x: 0, y: 0 }, strength: 19.36, softening: 0.05 })
         body.gravityEnabled = false
+      } else if (target === 'ruler' || target === 'photogate') {
+        const index = scenario.instruments.filter((instrument) => instrument.type === target).length
+        const targetBody = scenario.bodies.find((body) => body.id === selectedRef.current) ?? scenario.bodies[0]
+        scenario.instruments.push(createInstrument(target, target === 'ruler'
+          ? { id, name: `Ruler ${index + 1}`, a: { x: -2, y: 1 + index * 0.35 }, b: { x: 2, y: 1 + index * 0.35 } }
+          : { id, name: `Photogate ${index + 1}`, center: { x: -1 + index * 2, y: 1 }, angle: Math.PI / 2, targetBodyId: targetBody.id }))
       }
     })
     if (!['gravity', 'floor'].includes(target)) setSelectedId(id)
@@ -391,7 +510,33 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const moveEntity = useCallback((id, position) => {
     if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position, velocity: { x: 0, y: 0 } })
     else if (worldRef.current.tracks.some((track) => track.id === id)) updateTrack(id, { center: position })
-  }, [updateBody, updateTrack])
+    else if (worldRef.current.forces.some((force) => force.id === id && force.type === 'central')) updateForce(id, { center: position })
+    else if (worldRef.current.instruments.some((instrument) => instrument.id === id && instrument.type === 'photogate')) updateInstrument(id, { center: position })
+  }, [updateBody, updateForce, updateInstrument, updateTrack])
+
+  const alignInstrument = useCallback((instrumentId, radius = 0.6) => {
+    const instrument = worldRef.current.instruments.find((candidate) => candidate.id === instrumentId)
+    if (!instrument || !worldRef.current.tracks.length) return false
+    const origin = instrument.center ?? { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 }
+    let best = null
+    for (const track of worldRef.current.tracks) {
+      const tangent = { x: Math.cos(track.angle), y: Math.sin(track.angle) }
+      const normal = { x: -tangent.y, y: tangent.x }
+      const relative = { x: origin.x - track.center.x, y: origin.y - track.center.y }
+      const along = Math.max(-track.length / 2, Math.min(track.length / 2, relative.x * tangent.x + relative.y * tangent.y))
+      const point = { x: track.center.x + tangent.x * along + normal.x * track.thickness / 2, y: track.center.y + tangent.y * along + normal.y * track.thickness / 2 }
+      const distance = Math.hypot(point.x - origin.x, point.y - origin.y)
+      if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent, point, distance }
+    }
+    if (!best) return false
+    if (instrument.type === 'photogate') updateInstrument(instrument.id, { center: best.point, angle: best.track.angle + Math.PI / 2 })
+    else {
+      const readingLength = Math.hypot(instrument.b.x - instrument.a.x, instrument.b.y - instrument.a.y)
+      updateInstrument(instrument.id, { a: { x: best.point.x - best.tangent.x * readingLength / 2, y: best.point.y - best.tangent.y * readingLength / 2 }, b: { x: best.point.x + best.tangent.x * readingLength / 2, y: best.point.y + best.tangent.y * readingLength / 2 } })
+    }
+    setSnapFeedback(`Measurement alignment: ${instrument.name} aligned to ${best.track.name}; no physical connection was created.`)
+    return true
+  }, [updateInstrument])
 
   const placeBodyAtStart = useCallback((trackId, bodyId = selectedRef.current) => {
     const track = worldRef.current.tracks.find((candidate) => candidate.id === trackId)
@@ -422,6 +567,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       if (action.type === 'add_beam') addElement('beam')
       if (action.type === 'add_connector' || action.type === 'add_force' && ['spring', 'rope'].includes(action.target)) addElement(action.target)
       if (action.type === 'add_port') addElement('attachment')
+      if (action.type === 'add_instrument' && ['ruler', 'photogate'].includes(action.target)) addElement(action.target)
       if (action.type === 'add_joint') {
         if (!action.entityId || !action.portId || !action.otherEntityId || !action.otherPortId || !['rigid', 'pin'].includes(action.target)) throw new TypeError('A joint action requires two exact entity/port references and a rigid or pin type.')
         commitScenarioEdit((scenario) => { scenario.joints.push({ id: nextId(action.target), type: action.target, a: { type: 'port', ownerId: action.entityId, portId: action.portId }, b: { type: 'port', ownerId: action.otherEntityId, portId: action.otherPortId } }) })
@@ -447,7 +593,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   return {
     world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback, dragSnapCandidate,
     running, setRunning, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
-    updateBody, updateTrack, updateConnector, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
-    addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, placeBodyAtStart, prepareOrbit,
+    recordingStatus, pendingTrial, notebook, armTrial, discardTrial, savePendingTrial, deleteTrial,
+    updateBody, updateTrack, updateConnector, updateInstrument, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
+    addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, alignInstrument, placeBodyAtStart, prepareOrbit,
   }
 }

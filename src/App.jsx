@@ -4,7 +4,7 @@ import AgentDock from './components/AgentDock.jsx'
 import BuilderRail from './components/BuilderRail.jsx'
 import DataRail from './components/DataRail.jsx'
 import WorldScene3D from './components/WorldScene3D.jsx'
-import { downloadText, scenarioJson, telemetryToCsv } from './domain/export.js'
+import { downloadText, notebookJson, notebookToCsv, scenarioJson, telemetryToCsv } from './domain/export.js'
 import { listPresets } from './domain/presets.js'
 import { deserializeScenario } from './domain/scenario.js'
 import { useSimulation } from './hooks/useSimulation.js'
@@ -42,6 +42,8 @@ export default function App() {
     downloadText(`${world.scenarioId}-telemetry.csv`, telemetryToCsv(simulation.history), 'text/csv')
     setNotice('Telemetry exported')
   }
+  const exportNotebookJson = () => downloadText(`${world.scenarioId}-notebook.json`, notebookJson(simulation.notebook), 'application/json')
+  const exportNotebookCsv = () => downloadText(`${world.scenarioId}-notebook.csv`, notebookToCsv(simulation.notebook), 'text/csv')
 
   const importScenario = async (event) => {
     const file = event.target.files?.[0]
@@ -100,6 +102,9 @@ export default function App() {
               onRequestBodySnap={simulation.requestBodySnap}
               onClearBodySnap={simulation.clearBodySnap}
               onMoveConstraint={simulation.moveConstraint}
+              onMoveForce={simulation.moveEntity}
+              onMoveInstrument={simulation.updateInstrument}
+              onAlignInstrument={simulation.alignInstrument}
               onRequestTrackSnap={simulation.requestTrackSnap}
               onTransform={(id, changes) => world.tracks.some((track) => track.id === id) ? simulation.updateTrack(id, changes) : simulation.updateBody(id, changes)}
               onMoveConnectorEndpoint={simulation.moveConnectorEndpoint}
@@ -124,21 +129,32 @@ export default function App() {
                 {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
               </div>
             )}
-            <AgentDock scenario={simulation.scenario} world={world} onApply={simulation.applyActions} />
+            <AgentDock scenario={simulation.scenario} world={world} notebook={simulation.notebook} onApply={simulation.applyActions} />
           </div>
         </section>
 
         <DataRail
           world={world}
+          selectedId={simulation.selectedId}
           selectedBody={selectedBody}
           selectedEntity={selectedEntity}
           connectorState={simulation.selectedConnectorState}
           connectionPortId={simulation.connectionPortId}
           history={simulation.history}
+          recordingStatus={simulation.recordingStatus}
+          pendingTrial={simulation.pendingTrial}
+          notebook={simulation.notebook}
+          onArmTrial={simulation.armTrial}
+          onDiscardTrial={simulation.discardTrial}
+          onSaveTrial={simulation.savePendingTrial}
+          onDeleteTrial={simulation.deleteTrial}
+          onExportNotebookJson={exportNotebookJson}
+          onExportNotebookCsv={exportNotebookCsv}
           onSelectEntity={simulation.setSelectedId}
           onUpdateBody={updateBody}
           onUpdateTrack={simulation.updateTrack}
           onUpdateConnector={simulation.updateConnector}
+          onUpdateInstrument={simulation.updateInstrument}
           onUpdatePort={simulation.updatePort}
           onPinToWorld={simulation.pinPortToWorld}
           onConnectPort={simulation.connectPort}

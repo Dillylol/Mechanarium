@@ -131,6 +131,29 @@ describe('Scenario v2 mechanics world', () => {
     expect(world.bodies[0].velocity.x).toBeLessThan(2)
   })
 
+  it.each(['pin', 'rigid'])('runs gravity with a beam %s-jointed to a ramp track', (jointType) => {
+    const scenario = getPreset('projectile-motion')
+    const track = createTrack({ id: 'ramp', center: { x: 0, y: 0 }, angle: 0, length: 4, thickness: 0.18 })
+    const beam = createBody({ id: 'beam', shape: 'beam', mode: 'dynamic', length: 2, position: { x: 3, y: 0.09 } })
+    scenario.constraints = []
+    scenario.tracks = [track]
+    scenario.bodies = [createBody({ id: 'falling', position: { x: -3, y: 3 } }), beam]
+    scenario.joints = [{
+      id: 'ramp-beam-joint',
+      type: jointType,
+      a: { type: 'port', ownerId: track.id, portId: `${track.id}:end` },
+      b: { type: 'port', ownerId: beam.id, portId: `${beam.id}:start` },
+    }]
+
+    const initial = createWorld(scenario)
+    const world = stepWorld(initial)
+
+    expect(world.time).toBeCloseTo(initial.fixedStep, 10)
+    expect(world.tracks[0].center).toEqual(track.center)
+    expect(world.bodies.find((body) => body.id === 'falling').velocity.y).toBeLessThan(0)
+    expect(world.bodies.every((body) => Number.isFinite(body.position.x) && Number.isFinite(body.position.y))).toBe(true)
+  })
+
   it('transfers impulse and torque through dynamic-beam collisions', () => {
     const scenario = getPreset('physical-pendulum')
     scenario.gravity.enabled = false

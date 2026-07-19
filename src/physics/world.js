@@ -30,11 +30,11 @@ export function createWorld(input) {
   const source = cloneScenario(result.scenario)
   const ports = allPorts(source)
   const bodies = source.bodies.map((body) => ({ ...body }))
-  const bodyIndex = new Map(bodies.map((body) => [body.id, body]))
+  const ownerIndex = new Map([...bodies, ...source.tracks].map((owner) => [owner.id, owner]))
   const joints = source.joints.map((joint) => {
     if (joint.type !== 'rigid' || joint.restAngle !== undefined || joint.a.type !== 'port' || joint.b.type !== 'port') return joint
-    const a = bodyIndex.get(joint.a.ownerId)
-    const b = bodyIndex.get(joint.b.ownerId)
+    const a = ownerIndex.get(joint.a.ownerId)
+    const b = ownerIndex.get(joint.b.ownerId)
     return { ...joint, restAngle: a && b ? b.angle - a.angle : 0 }
   })
   let world = {
@@ -52,6 +52,7 @@ export function createWorld(input) {
     forces: source.forces,
     constraints: source.constraints,
     tracks: source.tracks,
+    instruments: source.instruments,
     ports,
     customPorts: source.ports,
     portIndex: new Map(ports.map((port) => [port.id, port])),
@@ -130,6 +131,7 @@ export function worldToScenario(world) {
     forces: cloneScenario(world.forces),
     constraints: cloneScenario(world.constraints),
     tracks: cloneScenario(world.tracks),
+    instruments: cloneScenario(world.instruments),
     ports: cloneScenario(world.customPorts),
     joints: cloneScenario(world.joints),
     connectors: cloneScenario(world.connectors).map((connector) => {

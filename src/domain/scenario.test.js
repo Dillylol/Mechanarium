@@ -2,8 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { INTEGRATORS } from '../physics/constants.js'
 import { allPorts, beamInertia, createBody, deserializeScenario, fitAutoLengthBeams, migrateScenario, serializeScenario, validateScenario } from './scenario.js'
 import { getPreset } from './presets.js'
+import { createInstrument } from './instruments.js'
 
 describe('Scenario v2 contract', () => {
+  it('defaults instruments additively and preserves them without creating ports', () => {
+    const source = getPreset('projectile-motion')
+    expect(source.instruments).toEqual([])
+    source.instruments.push(createInstrument('photogate', { id: 'gate', targetBodyId: source.bodies[0].id }))
+    const roundTrip = deserializeScenario(serializeScenario(source))
+    expect(roundTrip.instruments[0]).toMatchObject({ id: 'gate', type: 'photogate' })
+    expect(allPorts(roundTrip).some((port) => port.ownerId === 'gate')).toBe(false)
+  })
   it('round-trips v2 scenarios without losing assembly data', () => {
     const source = getPreset('compound-pendulum')
     expect(deserializeScenario(serializeScenario(source))).toEqual(source)

@@ -41,3 +41,9 @@ Beam modes are:
 Auto-length spans a beam between two connected end ports during paused editing and preserves that length when Run begins.
 
 Straight track segments are the current scope. Loops and spline tracks will reuse the same port schema in a later milestone.
+
+## Measurement laboratory
+
+Rulers and photogates are available in **Build** and remain measurement-only overlays. Drag them while paused or edit their values in the **Lab** tab. Releasing an instrument near a straight track aligns its transform to the track; this never creates a snap, mount, force, collision, or attachment port. A photogate may observe any body or target one body explicitly.
+
+Enter a prediction and trial metadata, choose **Record trial**, then press **Run**. Acquisition samples every 120 Hz physics step. **Pause** ends acquisition and opens a review state; save or discard it explicitly. Saved trials remain in the scenario notebook across apparatus edits and reloads. The plot compares saved trials using time, position, velocity, acceleration, gate interval, or derived speed. Notebook JSON preserves raw observations and metadata, while notebook CSV provides normalized sample and gate-event rows.

@@ -15,8 +15,8 @@ const elements = [
 ]
 
 const instruments = [
-  { label: 'Photogate', icon: Gauge },
-  { label: 'Ruler', icon: Ruler },
+  { id: 'photogate', label: 'Photogate', icon: Gauge },
+  { id: 'ruler', label: 'Ruler', icon: Ruler },
 ]
 
 export default function BuilderRail({ presets, activePreset, world, onAddElement, onLoadPreset }) {
@@ -41,9 +41,9 @@ export default function BuilderRail({ presets, activePreset, world, onAddElement
               return <button key={id} type="button" className={active ? 'active' : ''} onClick={() => onAddElement(id)} aria-label={ariaLabel}><Icon size={22} strokeWidth={1.6} /><span>{label}</span><small>{isToggle ? (active ? 'on' : 'off') : '+'}</small></button>
             })}
           </div>
-          <div className="rail-section-heading"><span>Lab instruments</span><small>preview</small></div>
+          <div className="rail-section-heading"><span>Lab instruments</span><small>measure</small></div>
           <div className="instrument-list">
-            {instruments.map(({ label, icon: Icon }) => <button key={label} type="button" disabled><Icon size={17} /><span>{label}</span><small>soon</small></button>)}
+            {instruments.map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => onAddElement(id)} aria-label={`Add ${label}`}><Icon size={17} /><span>{label}</span><small>+</small></button>)}
           </div>
           <div className="builder-note"><strong>Assembly mode</strong><p>Pick up a part to reveal every compatible green mount. Yellow source nodes magnetically align nearby; release, then confirm Snap to place. Run locks the topology.</p></div>
         </div>

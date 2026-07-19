@@ -12,6 +12,13 @@ Scenario v2 is the portable planar-assembly contract. Deserialization automatica
 - `joints`: frictionless pins or rigid welds between exact endpoints.
 - `forces`: non-uniform generators retained for uniform, drag, and central-force experiments.
 - `constraints`: ground planes. Inclines migrate to tracks.
+- `instruments`: optional measurement-only rulers and photogates. Missing arrays default to `[]` without a version bump.
+
+## Instruments and notebooks
+
+A ruler stores two distinct world endpoints plus resolution and optional uncertainty settings. A photogate stores a center, angle, finite aperture length, optional target body, resolution, and uncertainty settings. Instruments may align to apparatus geometry, but they never own ports or enter force, collision, connector, or joint graphs.
+
+Scenario JSON preserves placement and configuration only. Recorded observations live in a separate notebook keyed by scenario ID. Notebook JSON contains trial metadata, fixed-step samples, gate events, and derived results; notebook CSV normalizes samples and events into SI columns. Each trial stores its random seed so uncertainty is reproducible.
 
 ## Beam policy
 

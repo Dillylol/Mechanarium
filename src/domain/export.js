@@ -38,6 +38,21 @@ export function scenarioJson(scenario) {
   return serializeScenario(scenario)
 }
 
+export function notebookJson(notebook) {
+  return JSON.stringify(notebook, null, 2)
+}
+
+export function notebookToCsv(notebook) {
+  const columns = ['record_type', 'trial_id', 'trial_name', 'independent_variable', 'independent_value', 'notes', 'time_s', 'body_id', 'body', 'x_m', 'y_m', 'vx_m_s', 'vy_m_s', 'ax_m_s2', 'ay_m_s2', 'speed_m_s', 'gate_id', 'gate_name', 'direction']
+  const rows = []
+  for (const trial of notebook.trials ?? []) {
+    const metadata = [trial.id, trial.name, trial.independentVariable, trial.independentValue, trial.notes]
+    for (const sample of trial.samples ?? []) rows.push(['sample', ...metadata, sample.time, sample.bodyId, sample.bodyName, sample.x, sample.y, sample.vx, sample.vy, sample.ax, sample.ay, sample.speed, '', '', ''])
+    for (const event of trial.gateEvents ?? []) rows.push(['gate', ...metadata, event.time, event.bodyId, event.bodyName, event.position?.x, event.position?.y, event.velocity?.x, event.velocity?.y, '', '', event.speed, event.gateId, event.gateName, event.direction])
+  }
+  return [columns, ...rows].map((row) => row.map(csvCell).join(',')).join('\n')
+}
+
 export function downloadText(filename, contents, type) {
   const blob = new Blob([contents], { type })
   const url = URL.createObjectURL(blob)

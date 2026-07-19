@@ -6,7 +6,11 @@ Physics fixtures cover 120 Hz stepping, master/per-body gravity, spring period a
 
 Domain fixtures cover Scenario v1-to-v2 migration, v2 round trip, invalid beam/port/joint graphs, deterministic default ports, custom-port preservation, preset isolation, world-agent actions, and assembly-aware SI CSV export.
 
+Measurement fixtures cover ruler components, exact and reverse-direction gate crossings, interpolated timestamps, finite-aperture misses, body targeting, debounce, paired-gate calculations, seeded uncertainty, additive Scenario v2 instrument round trips, 120 Hz trial acquisition, notebook persistence, and normalized notebook exports. They also prove instruments never enter port or joint graphs.
+
 Testing Library fixtures cover the 3D studio, body gravity overrides, ramp center/angle/length editing, start placement, beam/rope/custom-port construction, all four SHM labs, paused edit locks, time reset after edits, stepping, accessible assembly diagnostics, local v2 saving, and natural-language assembly requests.
+
+The laboratory interface fixture adds a ruler and two gates, arms a trial, drives Run/Pause acquisition, reviews it, and saves it. Agent fixtures require measured values with units, current-step awareness, one evidence question, and an explicit statement when paired readings do not exist.
 
 ## Browser acceptance checklist
 
@@ -17,13 +21,15 @@ Testing Library fixtures cover the 3D studio, body gravity overrides, ramp cente
 - Rotate and resize a ramp/beam with gizmos and verify the body rests on the visible top face.
 - Confirm Run hides/locks structural controls, Pause restores them, and the next edit resets time and telemetry.
 - Leave the compound assembly running for at least 60 seconds and inspect console, interaction responsiveness, and memory behavior.
+- Build an incline experiment, add a ruler and two gates, align them, target a body, and record two trials at different angles.
+- Compare plotted measurements, export notebook JSON/CSV, reload, and confirm saved trials persist while instruments have no physical influence.
 
 ## Latest quality gate
 
 Run on 2026-07-19:
 
 - lint: passed;
-- automated tests: 45 passed across 10 files;
+- automated tests: 59 passed across 11 files;
 - production build: passed;
 - 60-second numerical soak: passed with finite state and bounded energy error.
 

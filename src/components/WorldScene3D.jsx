@@ -38,7 +38,7 @@ function addTransformGizmos(group, entity, center) {
   group.add(start)
 }
 
-export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal, dragSnapCandidate }) {
+export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal, dragSnapCandidate }) {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
   const cameraRef = useRef(null)
@@ -54,7 +54,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
   const trailRef = useRef(null)
   const gridRef = useRef(null)
   const [draggedPartId, setDraggedPartId] = useState(null)
-  const handlersRef = useRef({ onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running })
+  const handlersRef = useRef({ onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running })
   const worldStateRef = useRef(world)
   const assemblyRenderKey = useMemo(() => JSON.stringify({
     running,
@@ -62,16 +62,17 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     tracks: world.tracks,
     connectors: world.connectors.map((connector) => ({ id: connector.id, name: connector.name, type: connector.type, a: connector.a, b: connector.b, length: connector.length, restLength: connector.restLength, stiffness: connector.stiffness, damping: connector.damping })),
     forces: world.forces,
+    instruments: world.instruments,
     ports: world.ports,
     snapProposal,
     dragSnapCandidate,
     draggedPartId,
     selectedBeam: running ? null : world.bodies.find((body) => body.id === selectedId && body.shape === 'beam'),
-  }), [draggedPartId, dragSnapCandidate, running, selectedId, snapProposal, world.bodies, world.connectors, world.forces, world.ports, world.tracks])
+  }), [draggedPartId, dragSnapCandidate, running, selectedId, snapProposal, world.bodies, world.connectors, world.forces, world.instruments, world.ports, world.tracks])
 
   useEffect(() => {
-    handlersRef.current = { onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running }
-  }, [onClearBodySnap, onMove, onMoveConnectorEndpoint, onMoveConstraint, onRequestBodySnap, onRequestConnectorSnap, onRequestTrackSnap, onSelect, onTransform, running])
+    handlersRef.current = { onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running }
+  }, [onAlignInstrument, onClearBodySnap, onMove, onMoveConnectorEndpoint, onMoveConstraint, onMoveForce, onMoveInstrument, onRequestBodySnap, onRequestConnectorSnap, onRequestTrackSnap, onSelect, onTransform, running])
 
   useEffect(() => { worldStateRef.current = world }, [world])
 
@@ -144,6 +145,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     const intersection = new THREE.Vector3()
     let draggingId = null
     let draggingConstraint = null
+    let draggingForce = null
+    let draggingInstrument = null
     let draggingGizmo = null
     let draggingEndpoint = null
     let lastPointerPosition = null
@@ -167,7 +170,9 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       const bodyId = hits[0]?.object?.userData?.bodyId
       const constraintId = hits[0]?.object?.userData?.constraintId ?? hits[0]?.object?.userData?.entityId
       const connectorId = hits[0]?.object?.userData?.connectorId
-      if (bodyId || constraintId || connectorId) handlersRef.current.onSelect(bodyId ?? constraintId ?? connectorId)
+      const forceId = hits[0]?.object?.userData?.forceId
+      const instrumentId = hits[0]?.object?.userData?.instrumentId
+      if (bodyId || constraintId || connectorId || forceId || instrumentId) handlersRef.current.onSelect(bodyId ?? constraintId ?? connectorId ?? forceId ?? instrumentId)
       if (hits[0]?.object?.userData?.gizmo && !handlersRef.current.running) {
         draggingGizmo = hits[0].object.userData
         controls.enabled = false
@@ -190,10 +195,30 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         controls.enabled = false
         renderer.domElement.setPointerCapture?.(event.pointerId)
       }
+      if (forceId && hits[0].object.userData.center && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
+        const center = hits[0].object.userData.center
+        draggingForce = { id: forceId, offset: { x: intersection.x - center.x, y: intersection.y - center.y } }
+        controls.enabled = false
+        renderer.domElement.setPointerCapture?.(event.pointerId)
+      }
+      if (instrumentId && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
+        const instrument = worldStateRef.current.instruments.find((candidate) => candidate.id === instrumentId)
+        const center = hits[0].object.userData.center ?? instrument?.center ?? (instrument?.a && instrument?.b ? { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 } : intersection)
+        draggingInstrument = {
+          id: instrumentId,
+          endpoint: hits[0].object.userData.endpoint,
+          offset: { x: intersection.x - center.x, y: intersection.y - center.y },
+          a: instrument?.a,
+          b: instrument?.b,
+          center,
+        }
+        controls.enabled = false
+        renderer.domElement.setPointerCapture?.(event.pointerId)
+      }
     }
 
     const pointerMove = (event) => {
-      if ((!draggingId && !draggingConstraint && !draggingGizmo && !draggingEndpoint) || handlersRef.current.running) return
+      if ((!draggingId && !draggingConstraint && !draggingForce && !draggingInstrument && !draggingGizmo && !draggingEndpoint) || handlersRef.current.running) return
       setPointer(event)
       if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
         lastPointerPosition = { x: intersection.x, y: intersection.y }
@@ -201,6 +226,16 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         if (draggingConstraint) {
           lastConstraintPosition = { x: intersection.x - draggingConstraint.offset.x, y: intersection.y - draggingConstraint.offset.y }
           handlersRef.current.onMoveConstraint(draggingConstraint.id, lastConstraintPosition)
+        }
+        if (draggingForce) handlersRef.current.onMoveForce(draggingForce.id, { x: intersection.x - draggingForce.offset.x, y: intersection.y - draggingForce.offset.y })
+        if (draggingInstrument) {
+          if (draggingInstrument.endpoint) handlersRef.current.onMoveInstrument(draggingInstrument.id, { [draggingInstrument.endpoint]: { x: intersection.x, y: intersection.y } })
+          else if (draggingInstrument.a && draggingInstrument.b) {
+            const center = { x: intersection.x - draggingInstrument.offset.x, y: intersection.y - draggingInstrument.offset.y }
+            const dx = center.x - draggingInstrument.center.x
+            const dy = center.y - draggingInstrument.center.y
+            handlersRef.current.onMoveInstrument(draggingInstrument.id, { a: { x: draggingInstrument.a.x + dx, y: draggingInstrument.a.y + dy }, b: { x: draggingInstrument.b.x + dx, y: draggingInstrument.b.y + dy } })
+          } else handlersRef.current.onMoveInstrument(draggingInstrument.id, { center: { x: intersection.x - draggingInstrument.offset.x, y: intersection.y - draggingInstrument.offset.y } })
         }
         if (draggingEndpoint) handlersRef.current.onMoveConnectorEndpoint(draggingEndpoint.connectorId, draggingEndpoint.endpoint, { x: intersection.x, y: intersection.y })
         if (draggingGizmo) {
@@ -220,8 +255,11 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       else if (draggingId) handlersRef.current.onClearBodySnap()
       if (draggingEndpoint && lastPointerPosition) handlersRef.current.onRequestConnectorSnap(draggingEndpoint.connectorId, draggingEndpoint.endpoint, lastPointerPosition, snapRadius())
       if (draggingConstraint && lastConstraintPosition) handlersRef.current.onRequestTrackSnap(draggingConstraint.id, lastConstraintPosition, snapRadius())
+      if (draggingInstrument && !draggingInstrument.endpoint) handlersRef.current.onAlignInstrument(draggingInstrument.id, snapRadius())
       draggingId = null
       draggingConstraint = null
+      draggingForce = null
+      draggingInstrument = null
       draggingGizmo = null
       draggingEndpoint = null
       lastPointerPosition = null
@@ -436,10 +474,38 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     }
     for (const force of renderWorld.forces) {
       if (force.type === 'central') {
-        const core = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshStandardMaterial({ color: 0x009fe3, roughness: 0.35 }))
+        const core = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshStandardMaterial({ color: 0x009fe3, roughness: 0.35, emissive: force.id === selectedId ? 0x12475a : 0x000000 }))
         core.position.set(force.center.x, force.center.y, 0)
         core.castShadow = true
+        core.userData = { forceId: force.id, center: force.center }
         forceGroup.add(core)
+      }
+    }
+    for (const instrument of renderWorld.instruments) {
+      const selected = instrument.id === selectedId
+      if (instrument.type === 'ruler') {
+        const center = { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 }
+        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(instrument.a.x, instrument.a.y, 0.2), new THREE.Vector3(instrument.b.x, instrument.b.y, 0.2)])
+        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x111111 }))
+        line.userData = { instrumentId: instrument.id, center }
+        forceGroup.add(line)
+        if (!running) for (const endpoint of ['a', 'b']) {
+          const handle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 9), new THREE.MeshBasicMaterial({ color: endpoint === 'a' ? 0xf2cf00 : 0x00a965 }))
+          handle.position.set(instrument[endpoint].x, instrument[endpoint].y, 0.24)
+          handle.userData = { instrumentId: instrument.id, endpoint, center: instrument[endpoint] }
+          forceGroup.add(handle)
+        }
+      } else if (instrument.type === 'photogate') {
+        const tangent = { x: Math.cos(instrument.angle), y: Math.sin(instrument.angle) }
+        const half = instrument.length / 2
+        const points = [new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.2), new THREE.Vector3(instrument.center.x + tangent.x * half, instrument.center.y + tangent.y * half, 0.2)]
+        const gate = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x009d5b }))
+        gate.userData = { instrumentId: instrument.id, center: instrument.center }
+        forceGroup.add(gate)
+        const hub = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), new THREE.MeshBasicMaterial({ color: selected ? 0xf2cf00 : 0x009d5b }))
+        hub.position.set(instrument.center.x, instrument.center.y, 0.24)
+        hub.userData = { instrumentId: instrument.id, center: instrument.center }
+        forceGroup.add(hub)
       }
     }
     if (!running) for (const port of renderWorld.ports) {
@@ -525,6 +591,9 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
           const owner = [...world.bodies, ...world.tracks].find((candidate) => candidate.id === port.ownerId)
           return <button key={port.id} type="button" onClick={() => onSelect(port.id)}>{owner?.name ?? port.ownerId} {port.name} port</button>
         })}
+      </div>
+      <div className="visually-hidden" role="group" aria-label="Measurement instruments">
+        {world.instruments.map((instrument) => <button key={instrument.id} type="button" onClick={() => onSelect(instrument.id)}>{instrument.name}</button>)}
       </div>
       <div className="scene-status" aria-live="polite">
         {world.bodies.find((body) => body.id === selectedId)?.name ?? 'No selection'} · {world.time.toFixed(2)} s · {world.constraints.some((constraint) => constraint.type === 'ground') ? 'ground on' : 'reference grid only'}
