@@ -8,7 +8,7 @@ As of 2026-07-19, Mechanarium has completed the planar assembly and SHM mileston
 | 1 â€” Correctness foundation | Complete | Fixed-step clock, integrators, metrics, analytic fixtures |
 | 2 â€” General mechanics model | Complete | Versioned scenarios, forces, constraints, collisions, initial presets |
 | 3 â€” Sandbox interaction | Complete | 3D laboratory, builder, agent dock, telemetry, export, accessibility |
-| 4 â€” Planar assembly and SHM | Complete | Scenario v2, beams, ports, explicit snap confirmation, joints, springs/ropes, solid tracks, transform gizmos, four SHM systems, 43 tests |
+| 4 â€” Planar assembly and SHM | Complete | Scenario v2, owner-mounted ports, explicit snap confirmation, joints, springs/ropes, solid tracks, transform gizmos, four SHM systems, 44 tests |
 | 5 â€” Performance architecture | In progress | 120 Hz physics/30 Hz UI publication and reusable graphics; worker/Wasm migration remains future work |
 | 6 â€” Guided inquiry | Not started | Deterministic observation prompts are the only current guidance |
 | 7 â€” Release hardening | Not started | Deployment and broad device audit remain future work |

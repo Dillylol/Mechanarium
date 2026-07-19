@@ -32,7 +32,7 @@ export function NumberField({ label, value, unit, min, max, step = 0.1, onChange
   )
 }
 
-export default function Inspector({ entity: body, onUpdate, onRemove, canRemove, running, connectorState, onPlaceAtStart, onPinToWorld, connectionPortId, onConnectPort }) {
+export default function Inspector({ entity: body, ownerName, onSelectOwner, onUpdate, onRemove, canRemove, running, connectorState, onPlaceAtStart, onPinToWorld, connectionPortId, onConnectPort }) {
   if (!body) return <p>Select an assembly entity to inspect it.</p>
   const disabledTitle = running ? 'Pause the experiment to edit body properties.' : undefined
   const isTrack = body.type === 'segment'
@@ -50,6 +50,7 @@ export default function Inspector({ entity: body, onUpdate, onRemove, canRemove,
         <label className="text-field"><span>Name</span><input value={body.name} onChange={(event) => onUpdate({ name: event.target.value })} /></label>
         {isPort ? (
           <>
+            <div className="mounted-port-badge"><span aria-hidden="true">●</span><strong>Mounted to {ownerName}</strong><small>Follows position and rotation</small><button type="button" onClick={onSelectOwner}>Select {ownerName}</button></div>
             <div className="field-grid"><NumberField label="Local x" value={body.localPosition.x} unit="m" onChange={(x) => onUpdate({ localPosition: { ...body.localPosition, x } })} /><NumberField label="Local y" value={body.localPosition.y} unit="m" onChange={(y) => onUpdate({ localPosition: { ...body.localPosition, y } })} /></div>
             <button className="orbit-button" type="button" onClick={onPinToWorld}>Pin this port to world</button>
             {!connectionPortId ? <button className="orbit-button" type="button" onClick={() => onConnectPort()}>Use as first structural port</button> : connectionPortId === body.id ? <button className="orbit-button" type="button" onClick={() => onConnectPort()}>Cancel connection</button> : <div className="connection-actions"><button type="button" onClick={() => onConnectPort('rigid')}>Preview rigid snap</button><button type="button" onClick={() => onConnectPort('pin')}>Preview pin snap</button></div>}

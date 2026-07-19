@@ -49,6 +49,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
   const constraintsRef = useRef(null)
   const forceArtifactsRef = useRef(null)
   const springsRef = useRef(new Map())
+  const portArtifactsRef = useRef(new Map())
+  const endpointHandlesRef = useRef(new Map())
   const trailRef = useRef(null)
   const gridRef = useRef(null)
   const handlersRef = useRef({ onSelect, onMove, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running })
@@ -76,6 +78,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
     const bodyMeshes = bodiesRef.current
     const forceArrows = arrowsRef.current
     const springArtifacts = springsRef.current
+    const portArtifacts = portArtifactsRef.current
+    const endpointHandles = endpointHandlesRef.current
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xf4f4f0)
@@ -263,6 +267,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
       constraintsRef.current = null
       forceArtifactsRef.current = null
       springArtifacts.clear()
+      portArtifacts.clear()
+      endpointHandles.clear()
       trailRef.current = null
       gridRef.current = null
     }
@@ -376,6 +382,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
     for (const child of [...group.children]) { group.remove(child); disposeObject(child) }
     for (const child of [...forceGroup.children]) { forceGroup.remove(child); disposeObject(child) }
     springsRef.current.clear()
+    portArtifactsRef.current.clear()
+    endpointHandlesRef.current.clear()
 
     for (const constraint of renderWorld.tracks) {
         const ramp = new THREE.Mesh(new THREE.BoxGeometry(constraint.length, constraint.thickness, 1.35), new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 0.75, emissive: constraint.id === selectedId ? 0x252525 : 0x000000 }))
@@ -415,6 +423,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
           handle.position.set(endpoint.position.x, endpoint.position.y, 0.08)
           handle.userData = { connectorId: force.id, endpoint: key }
           forceGroup.add(handle)
+          endpointHandlesRef.current.set(`${force.id}:${key}`, handle)
         }
       }
     }
@@ -436,11 +445,13 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
       marker.position.set(resolved.position.x, resolved.position.y, 0.24)
       marker.userData.entityId = port.id
       forceGroup.add(marker)
+      let halo = null
       if (isSnapTarget) {
-        const halo = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.045, 10, 28), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
+        halo = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.045, 10, 28), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
         halo.position.set(resolved.position.x, resolved.position.y, 0.22)
         forceGroup.add(halo)
       }
+      portArtifactsRef.current.set(port.id, { marker, halo })
     }
   }, [assemblyRenderKey, running, selectedId, snapProposal])
 
@@ -455,6 +466,17 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
       positions.setXYZ(1, b.position.x, b.position.y, 0)
       positions.needsUpdate = true
       spring.geometry.computeBoundingSphere()
+      for (const [key, endpoint] of [['a', a], ['b', b]]) {
+        const handle = endpointHandlesRef.current.get(`${force.id}:${key}`)
+        if (handle) handle.position.set(endpoint.position.x, endpoint.position.y, 0.08)
+      }
+    }
+    for (const port of world.ports) {
+      const artifact = portArtifactsRef.current.get(port.id)
+      const resolved = artifact && resolveEndpoint(world, { type: 'port', ownerId: port.ownerId, portId: port.id })
+      if (!artifact || !resolved) continue
+      artifact.marker.position.set(resolved.position.x, resolved.position.y, 0.24)
+      artifact.halo?.position.set(resolved.position.x, resolved.position.y, 0.22)
     }
   }, [world.bodies, world.connectors, world])
 

@@ -39,7 +39,7 @@ npm run build
 npm run check
 ```
 
-The current gate has 43 tests across nine files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
+The current gate has 44 tests across nine files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
 
 ## Documentation
 

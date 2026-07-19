@@ -373,9 +373,13 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const selectedBody = useMemo(() => world.bodies.find((body) => body.id === selectedId) ?? world.bodies[0], [selectedId, world.bodies])
   const selectedEntity = useMemo(() => world.bodies.find((item) => item.id === selectedId) ?? world.tracks.find((item) => item.id === selectedId) ?? world.connectors.find((item) => item.id === selectedId) ?? world.ports.find((item) => item.id === selectedId) ?? selectedBody, [selectedBody, selectedId, world.bodies, world.connectors, world.ports, world.tracks])
   const selectedConnectorState = useMemo(() => selectedEntity?.a ? connectorState(world, selectedEntity) : null, [selectedEntity, world])
+  const connectionPortLabel = useMemo(() => {
+    const port = connectionPortId && world.portIndex.get(connectionPortId)
+    return port ? portLabel(world, port) : ''
+  }, [connectionPortId, world])
 
   return {
-    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, snapProposal, snapFeedback,
+    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback,
     running, setRunning, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
     updateBody, updateTrack, updateConnector, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
     addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, placeBodyAtStart, prepareOrbit,

@@ -25,7 +25,7 @@ Conservative motion uses a kick-drift-kick symplectic path at 120 Hz. Contacts, 
 
 ## Verification
 
-- 43 automated tests across nine files.
+- 44 automated tests across nine files.
 - Fixtures cover v1 migration/v2 round trip, deterministic/custom ports, invalid graphs, gravity overrides, spring period/energy, rope slack/tension and period, beam period/inertia, parallel-axis inertia, pin error, track contact/friction/restitution, UI construction/locking, export, and a 60-second compound-assembly soak.
 - `npm run check` passes lint, tests, and the production build.
 - Browser acceptance covers all four SHM presets, manual construction controls, paused locking, and live simulation.

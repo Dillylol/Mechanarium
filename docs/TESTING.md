@@ -22,7 +22,7 @@ Testing Library fixtures cover the 3D studio, body gravity overrides, ramp cente
 Run on 2026-07-19:
 
 - lint: passed;
-- automated tests: 43 passed across 9 files;
+- automated tests: 44 passed across 9 files;
 - production build: passed;
 - 60-second numerical soak: passed with finite state and bounded energy error.
 

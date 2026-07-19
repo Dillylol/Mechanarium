@@ -111,12 +111,12 @@ export default function App() {
               overlays={overlays}
               snapProposal={simulation.snapProposal}
             />
-            {(simulation.snapProposal || simulation.snapFeedback) && (
-              <div className={`snap-confirmation${simulation.snapProposal ? ' pending' : ' confirmed'}`} role={simulation.snapProposal ? 'dialog' : 'status'} aria-label={simulation.snapProposal ? 'Snap placement' : undefined} aria-live="polite">
-                <div className="snap-indicator" aria-hidden="true">{simulation.snapProposal ? '◎' : '✓'}</div>
+            {(simulation.snapProposal || simulation.connectionPortId || simulation.snapFeedback) && (
+              <div className={`snap-confirmation${simulation.snapProposal ? ' pending' : simulation.connectionPortId ? ' armed' : ' confirmed'}`} role={simulation.snapProposal ? 'dialog' : 'status'} aria-label={simulation.snapProposal ? 'Snap placement' : undefined} aria-live="polite">
+                <div className="snap-indicator" aria-hidden="true">{simulation.snapProposal ? '◎' : simulation.connectionPortId ? '1' : '✓'}</div>
                 <div>
-                  <strong>{simulation.snapProposal ? 'Snap candidate' : 'Placement confirmed'}</strong>
-                  <p>{simulation.snapProposal?.message ?? simulation.snapFeedback}</p>
+                  <strong>{simulation.snapProposal ? 'Snap candidate' : simulation.connectionPortId ? 'First port armed' : 'Placement confirmed'}</strong>
+                  <p>{simulation.snapProposal?.message ?? (simulation.connectionPortId ? `${simulation.connectionPortLabel} is mounted and ready. Select a second port, then preview a rigid or pin snap.` : simulation.snapFeedback)}</p>
                 </div>
                 {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
               </div>

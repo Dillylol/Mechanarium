@@ -50,6 +50,8 @@ export default function DataRail({ world, selectedBody, selectedEntity, connecto
 
       <Inspector
         entity={selectedEntity}
+        ownerName={selectedEntity.ownerId ? [...world.bodies, ...world.tracks].find((candidate) => candidate.id === selectedEntity.ownerId)?.name : ''}
+        onSelectOwner={() => onSelectEntity(selectedEntity.ownerId)}
         connectorState={connectorState}
         onUpdate={(changes) => selectedEntity.ownerId ? onUpdatePort(selectedEntity.id, changes) : selectedEntity.type === 'segment' ? onUpdateTrack(selectedEntity.id, changes) : ['spring', 'rope'].includes(selectedEntity.type) ? onUpdateConnector(selectedEntity.id, changes) : onUpdateBody(changes)}
         onRemove={() => onRemoveEntity(selectedEntity.id)}

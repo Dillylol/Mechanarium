@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createBody, createConnector, createTrack } from '../domain/scenario.js'
 import { getPreset } from '../domain/presets.js'
-import { connectorState, resolveEndpoint } from './assembly.js'
+import { connectorState, resolveEndpoint, resolvePort } from './assembly.js'
 import { createWorld, stepWorld } from './world.js'
 
 function run(world, seconds) {
@@ -25,6 +25,18 @@ function crossings(scenario, seconds, sample) {
 }
 
 describe('Scenario v2 mechanics world', () => {
+  it('keeps custom attachment points mounted through owner translation and rotation', () => {
+    const scenario = getPreset('projectile-motion')
+    const owner = scenario.bodies[0]
+    scenario.ports.push({ id: 'projectile:mount', ownerId: owner.id, name: 'Mount', kind: 'custom', custom: true, localPosition: { x: 1, y: 0 } })
+    const world = createWorld(scenario)
+    world.bodies[0].position = { x: 3, y: 4 }
+    world.bodies[0].angle = Math.PI / 2
+    const mounted = resolvePort(world, 'projectile:mount')
+    expect(mounted.x).toBeCloseTo(3, 8)
+    expect(mounted.y).toBeCloseTo(5, 8)
+  })
+
   it('applies master gravity with disabled and doubled per-body participation', () => {
     const scenario = getPreset('projectile-motion')
     scenario.constraints = []
