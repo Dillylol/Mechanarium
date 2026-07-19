@@ -87,6 +87,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .scene-hint, .scene-status { position: absolute; z-index: 2; display: flex; gap: 12px; pointer-events: none; font: 700 8px ui-monospace, monospace; letter-spacing: .05em; text-transform: uppercase; }
 .scene-hint { top: 12px; left: 12px; color: #777; }.scene-status { top: 12px; right: 12px; padding: 7px 9px; color: #fff; background: #111; }
 
+.snap-confirmation { position: absolute; right: clamp(18px, 4vw, 56px); bottom: 92px; left: clamp(18px, 4vw, 56px); z-index: 10; min-height: 58px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border: 2px solid var(--black); background: rgba(255,255,255,.97); box-shadow: 0 10px 34px rgba(0,0,0,.14); }
+.snap-confirmation.pending { border-color: var(--green); }
+.snap-confirmation.confirmed { right: auto; grid-template-columns: 34px minmax(0, 1fr); border-color: var(--green); }
+.snap-indicator { width: 30px; height: 30px; display: grid; place-items: center; color: #fff; border-radius: 50%; background: var(--green); font: 900 16px/1 ui-monospace, monospace; }
+.snap-confirmation strong { display: block; font: 800 9px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.snap-confirmation p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
+.snap-actions { display: flex; gap: 6px; }
+.snap-actions button { min-height: 32px; padding: 0 11px; border: 1px solid #111; background: #fff; font: 800 8px ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+.snap-actions button:first-child { color: #fff; border-color: var(--green); background: var(--green); }
+.snap-actions button:hover { color: #fff; background: #111; }
+
 .agent-dock { position: absolute; right: clamp(18px, 4vw, 56px); bottom: 18px; left: clamp(18px, 4vw, 56px); z-index: 8; pointer-events: none; }
 .agent-reply { width: fit-content; max-width: min(620px, 85%); display: flex; align-items: flex-start; gap: 7px; margin: 0 auto 7px 22px; padding: 8px 11px; color: #222; border: 1px solid #111; background: rgba(255,255,255,.94); box-shadow: 0 5px 24px rgba(0,0,0,.08); font-size: 10px; line-height: 1.4; pointer-events: auto; }
 .agent-reply svg { flex: 0 0 auto; }
@@ -131,6 +142,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .orbit-button { width: 100%; min-height: 31px; margin-top: 9px; border: 1px solid #111; background: #fff; font: 800 8px ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }.orbit-button:hover { color: #fff; background: #111; }
 .parallel-data .rail-section-heading { margin-top: 0; }.parallel-data table { width: 100%; border-collapse: collapse; font: 9px ui-monospace, monospace; }.parallel-data th, .parallel-data td { padding: 6px 3px; border-bottom: 1px solid var(--line); text-align: right; }.parallel-data th:first-child { max-width: 90px; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }.parallel-data thead { color: var(--muted); text-transform: uppercase; }
 .assembly-diagnostics .rail-section-heading { margin-top: 0; }.diagnostic-list { margin: 0; padding-left: 16px; color: #b32727; font-size: 9px; line-height: 1.5; }.constraint-row { display: grid; grid-template-columns: 42px 1fr; gap: 6px; margin: 6px 0 0; padding: 6px; border: 1px solid var(--line); font: 8px ui-monospace, monospace; }.constraint-row strong { text-transform: uppercase; }.constraint-row span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; }
+.port-shortcuts { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }.port-shortcuts button { min-height: 25px; padding: 4px 6px; border: 1px solid var(--line); background: #fff; font: 700 7px ui-monospace, monospace; text-transform: uppercase; cursor: pointer; }.port-shortcuts button.active, .port-shortcuts button:hover { color: #fff; border-color: var(--green); background: var(--green); }
 .app-notice { position: fixed; right: 9px; bottom: 7px; z-index: 30; color: #777; font: 700 7px ui-monospace, monospace; letter-spacing: .05em; text-transform: uppercase; pointer-events: none; }
 
 @media (max-width: 1120px) {
@@ -142,6 +154,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   body { overflow: auto; }.mechanarium-app { height: auto; min-height: 100vh; }.app-bar { position: sticky; top: 0; grid-template-columns: 1fr auto; }.scenario-identity { display: none; }.run-controls { border-left: 0; }.wordmark { border-right: 0; }
   .studio-layout { display: grid; grid-template-columns: 1fr; }.builder-rail { max-height: none; border-right: 0; border-bottom: 1px solid #111; }.element-grid { grid-template-columns: repeat(3, 1fr); }.element-grid button { height: 72px; }
   .world-stage { height: 72vh; min-height: 540px; }.data-rail { border-top: 1px solid #111; border-left: 0; }.data-rail > section { max-width: none; }
+  .snap-confirmation { grid-template-columns: 28px minmax(0, 1fr); }.snap-actions { grid-column: 1 / -1; }.snap-actions button { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

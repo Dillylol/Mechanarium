@@ -52,8 +52,8 @@ export default function Inspector({ entity: body, onUpdate, onRemove, canRemove,
           <>
             <div className="field-grid"><NumberField label="Local x" value={body.localPosition.x} unit="m" onChange={(x) => onUpdate({ localPosition: { ...body.localPosition, x } })} /><NumberField label="Local y" value={body.localPosition.y} unit="m" onChange={(y) => onUpdate({ localPosition: { ...body.localPosition, y } })} /></div>
             <button className="orbit-button" type="button" onClick={onPinToWorld}>Pin this port to world</button>
-            {!connectionPortId ? <button className="orbit-button" type="button" onClick={() => onConnectPort()}>Use as first structural port</button> : connectionPortId === body.id ? <button className="orbit-button" type="button" onClick={() => onConnectPort()}>Cancel connection</button> : <div className="connection-actions"><button type="button" onClick={() => onConnectPort('rigid')}>Rigid to first</button><button type="button" onClick={() => onConnectPort('pin')}>Pin to first</button></div>}
-            <p className="environment-help">Connector endpoints may snap here without welding. Structural joints preserve this port relationship.</p>
+            {!connectionPortId ? <button className="orbit-button" type="button" onClick={() => onConnectPort()}>Use as first structural port</button> : connectionPortId === body.id ? <button className="orbit-button" type="button" onClick={() => onConnectPort()}>Cancel connection</button> : <div className="connection-actions"><button type="button" onClick={() => onConnectPort('rigid')}>Preview rigid snap</button><button type="button" onClick={() => onConnectPort('pin')}>Preview pin snap</button></div>}
+            <p className="environment-help">Choose two ports, preview their alignment, then confirm Snap to place. Connector endpoints attach without welding.</p>
           </>
         ) : isConnector ? (
           <>
@@ -65,7 +65,7 @@ export default function Inspector({ entity: body, onUpdate, onRemove, canRemove,
               <NumberField label="Tension" value={connectorState?.tension ?? 0} unit="N" onChange={() => {}} />
               <NumberField label="Extension" value={connectorState?.extension ?? 0} unit="m" onChange={() => {}} />
             </div>
-            <p className="environment-help">Drag either endpoint in the world. Release near a highlighted port to attach; drag away to disconnect.</p>
+            <p className="environment-help">Drag either endpoint near a port. A green target and confirmation card appear; attachment occurs only after Snap to place.</p>
           </>
         ) : (
           <>

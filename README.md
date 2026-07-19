@@ -11,7 +11,7 @@ Mechanarium is an interactive three-dimensional mechanics laboratory for learnin
 - Master and per-object gravity participation, central forces, massless springs, slack/tension ropes, contacts, friction, restitution, pins, and rigid welds.
 - Dynamic, pinned, and track beams with `I = mLÂ²/12`, auto-length, and compound inertia through the parallel-axis theorem.
 - Straight solid ramps/tracks whose rendered and collision geometry are identicalâ€”no hidden rails or body-specific platforms.
-- Paused KSP-inspired assembly editing: direct translation, angle/length gizmos, start ports, snapping, connector handles, custom attachment points, and keyboard controls.
+- Paused KSP-inspired assembly editing: direct translation, angle/length gizmos, start ports, explicit snap previews and confirmation, connector handles, custom attachment points, and keyboard controls.
 - Nine prepared experiments, including inclined spring, rope pendulum, uniform-beam physical pendulum, and compound beam SHM systems.
 - Energy and kinematics telemetry, connector/beam/joint diagnostics, force vectors, trails, accessible tables, Scenario JSON, and SI CSV.
 - Local deterministic and optional OpenAI-backed world agents with Scenario v2 assembly actions.
@@ -39,7 +39,7 @@ npm run build
 npm run check
 ```
 
-The current gate has 42 tests across nine files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
+The current gate has 43 tests across nine files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
 
 ## Documentation
 

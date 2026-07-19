@@ -98,8 +98,10 @@ export default function App() {
               onSelect={simulation.setSelectedId}
               onMove={moveBody}
               onMoveConstraint={simulation.moveConstraint}
+              onRequestTrackSnap={simulation.requestTrackSnap}
               onTransform={(id, changes) => world.tracks.some((track) => track.id === id) ? simulation.updateTrack(id, changes) : simulation.updateBody(id, changes)}
               onMoveConnectorEndpoint={simulation.moveConnectorEndpoint}
+              onRequestConnectorSnap={simulation.requestConnectorSnap}
               onDisconnect={() => simulation.disconnectConnector(simulation.selectedId)}
               onNudge={nudgeSelected}
               onDelete={() => simulation.removeEntity(simulation.selectedId)}
@@ -107,7 +109,18 @@ export default function App() {
               running={simulation.running}
               history={simulation.history}
               overlays={overlays}
+              snapProposal={simulation.snapProposal}
             />
+            {(simulation.snapProposal || simulation.snapFeedback) && (
+              <div className={`snap-confirmation${simulation.snapProposal ? ' pending' : ' confirmed'}`} role={simulation.snapProposal ? 'dialog' : 'status'} aria-label={simulation.snapProposal ? 'Snap placement' : undefined} aria-live="polite">
+                <div className="snap-indicator" aria-hidden="true">{simulation.snapProposal ? '◎' : '✓'}</div>
+                <div>
+                  <strong>{simulation.snapProposal ? 'Snap candidate' : 'Placement confirmed'}</strong>
+                  <p>{simulation.snapProposal?.message ?? simulation.snapFeedback}</p>
+                </div>
+                {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
+              </div>
+            )}
             <AgentDock scenario={simulation.scenario} world={world} onApply={simulation.applyActions} />
           </div>
         </section>
@@ -119,6 +132,7 @@ export default function App() {
           connectorState={simulation.selectedConnectorState}
           connectionPortId={simulation.connectionPortId}
           history={simulation.history}
+          onSelectEntity={simulation.setSelectedId}
           onUpdateBody={updateBody}
           onUpdateTrack={simulation.updateTrack}
           onUpdateConnector={simulation.updateConnector}

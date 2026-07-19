@@ -20,6 +20,10 @@ Master gravity provides magnitude and direction. Each dynamic object independent
 
 Bodies derive center and cardinal ports. Tracks and beams derive start, center, and end ports. Custom attachment points are serialized and may be renamed or repositioned. Connector and track endpoints use an 18-pixel snap radius that remains consistent while zooming.
 
+Snapping is always explicit. Drag a connector endpoint or track endpoint near a compatible port to produce a green target halo and, for tracks, a green ghost preview. The editor leaves the entity where it was released until **Snap to place** is selected. **Keep free** cancels the candidate without creating a connection. A confirmation message names both endpoints after placement.
+
+Compound structural joints use the same confirmation flow: choose the first structural port, select the second port, choose **Preview rigid snap** or **Preview pin snap**, inspect the proposed alignment, and then select **Snap to place**. Custom ports also appear as quick-select chips in **Assembly constraints** so closely overlapping parts do not make port selection finicky. The second owner is translated so the ports coincide only when the snap is confirmed.
+
 Select a port and choose **Use as first structural port**, then select a port on another entity and choose **Rigid to first** or **Pin to first**. A port may also be pinned to its current world position. Rigid groups report composite inertia; pins preserve a common point while allowing rotation.
 
 ## Springs, ropes, and beams

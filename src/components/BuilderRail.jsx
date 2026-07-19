@@ -45,7 +45,7 @@ export default function BuilderRail({ presets, activePreset, world, onAddElement
           <div className="instrument-list">
             {instruments.map(({ label, icon: Icon }) => <button key={label} type="button" disabled><Icon size={17} /><span>{label}</span><small>soon</small></button>)}
           </div>
-          <div className="builder-note"><strong>Assembly mode</strong><p>Pause to translate, rotate, resize, snap ports, or reconnect springs and ropes. Run locks the topology.</p></div>
+          <div className="builder-note"><strong>Assembly mode</strong><p>Pause to translate, rotate, or resize. Near targets preview in green; nothing connects until you confirm Snap to place. Run locks the topology.</p></div>
         </div>
       ) : (
         <div className="rail-content">

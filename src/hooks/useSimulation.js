@@ -10,6 +10,21 @@ const HISTORY_LIMIT = 480
 const UI_PUBLISH_INTERVAL_MS = 1000 / 30
 const nextId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
+function portLabel(world, port) {
+  const owner = [...world.bodies, ...world.tracks].find((candidate) => candidate.id === port.ownerId)
+  return `${owner?.name ?? port.ownerId} · ${port.name}`
+}
+
+function nearestPort(world, position, radius, predicate = () => true) {
+  return world.ports
+    .filter(predicate)
+    .map((port) => ({ port, resolved: resolvePort(world, port.id) }))
+    .filter((candidate) => candidate.resolved)
+    .map((candidate) => ({ ...candidate, distance: Math.hypot(candidate.resolved.x - position.x, candidate.resolved.y - position.y) }))
+    .filter((candidate) => candidate.distance <= radius)
+    .sort((a, b) => a.distance - b.distance)[0] ?? null
+}
+
 function sampleWorld(world, bodyId) {
   const body = world.bodies.find((candidate) => candidate.id === bodyId) ?? world.bodies[0]
   if (!body) return null
@@ -37,6 +52,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const [world, setWorld] = useState(() => createWorld(initial))
   const [selectedId, setSelectedId] = useState(initial.bodies[0].id)
   const [connectionPortId, setConnectionPortId] = useState(null)
+  const [snapProposal, setSnapProposal] = useState(null)
+  const [snapFeedback, setSnapFeedback] = useState('')
   const [running, setRunningState] = useState(false)
   const [runError, setRunError] = useState('')
   const [speed, setSpeed] = useState(1)
@@ -47,6 +64,11 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   useEffect(() => { worldRef.current = world }, [world])
   useEffect(() => { selectedRef.current = selectedId }, [selectedId])
+  useEffect(() => {
+    if (!snapFeedback) return undefined
+    const timeout = setTimeout(() => setSnapFeedback(''), 3200)
+    return () => clearTimeout(timeout)
+  }, [snapFeedback])
 
   const record = useCallback((nextWorld) => {
     const sample = sampleWorld(nextWorld, selectedRef.current)
@@ -85,6 +107,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     clockRef.current = createFixedStepClock({ fixedStep: nextWorld.fixedStep })
     setSelectedId(nextWorld.bodies[0].id)
     setConnectionPortId(null)
+    setSnapProposal(null)
     setHistory([]); setRunningState(false); setRunError('')
   }, [])
 
@@ -138,7 +161,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const pinPortToWorld = useCallback((portId) => {
     const resolved = resolvePort(worldRef.current, portId)
     if (!resolved) return
+    const label = portLabel(worldRef.current, resolved.port)
     commitScenarioEdit((scenario) => { scenario.joints.push({ id: nextId('pin'), type: 'pin', a: { type: 'world', position: { x: resolved.x, y: resolved.y } }, b: { type: 'port', ownerId: resolved.port.ownerId, portId } }) })
+    setSnapFeedback(`Pinned: ${label} → world`)
   }, [commitScenarioEdit])
 
   const connectPort = useCallback((portId, type) => {
@@ -147,9 +172,19 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     const first = worldRef.current.portIndex.get(connectionPortId)
     const second = worldRef.current.portIndex.get(portId)
     if (!first || !second || first.ownerId === second.ownerId) throw new TypeError('Choose ports on two different entities.')
-    commitScenarioEdit((scenario) => { scenario.joints.push({ id: nextId(type), type, a: { type: 'port', ownerId: first.ownerId, portId: first.id }, b: { type: 'port', ownerId: second.ownerId, portId: second.id } }) })
+    const firstPosition = resolvePort(worldRef.current, first.id)
+    const secondPosition = resolvePort(worldRef.current, second.id)
+    if (!firstPosition || !secondPosition) throw new TypeError('Both structural ports must have a valid position.')
+    setSnapProposal({
+      kind: 'joint', jointType: type, firstPortId: first.id, secondPortId: second.id,
+      movingOwnerId: second.ownerId,
+      delta: { x: firstPosition.x - secondPosition.x, y: firstPosition.y - secondPosition.y },
+      sourcePortId: second.id, targetPortId: first.id,
+      sourceLabel: portLabel(worldRef.current, second), targetLabel: portLabel(worldRef.current, first),
+      message: `${portLabel(worldRef.current, second)} will align with ${portLabel(worldRef.current, first)} and form a ${type} joint.`,
+    })
     setConnectionPortId(null)
-  }, [commitScenarioEdit, connectionPortId])
+  }, [connectionPortId])
 
   const updateTrack = useCallback((trackId, changes) => {
     commitScenarioEdit((scenario) => { scenario.tracks = scenario.tracks.map((track) => track.id === trackId ? { ...track, ...changes } : track) })
@@ -161,11 +196,75 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     setSelectedId(connectorId)
   }, [commitScenarioEdit])
 
-  const moveConnectorEndpoint = useCallback((connectorId, key, position, snap = true, snapRadius = 0.45) => {
-    const nearest = snap ? worldRef.current.ports.map((port) => ({ port, resolved: resolvePort(worldRef.current, port.id) })).filter((item) => item.resolved).map((item) => ({ ...item, distance: Math.hypot(item.resolved.x - position.x, item.resolved.y - position.y) })).sort((a, b) => a.distance - b.distance)[0] : null
-    const endpoint = nearest && nearest.distance <= snapRadius ? { type: 'port', ownerId: nearest.port.ownerId, portId: nearest.port.id } : { type: 'world', position }
-    updateConnector(connectorId, { [key]: endpoint })
+  const moveConnectorEndpoint = useCallback((connectorId, key, position) => {
+    updateConnector(connectorId, { [key]: { type: 'world', position } })
   }, [updateConnector])
+
+  const requestConnectorSnap = useCallback((connectorId, key, position, snapRadius = 0.45) => {
+    const connector = worldRef.current.connectors.find((candidate) => candidate.id === connectorId)
+    if (!connector) return
+    const otherEndpoint = connector[key === 'a' ? 'b' : 'a']
+    const candidate = nearestPort(worldRef.current, position, snapRadius, (port) => port.id !== otherEndpoint.portId)
+    if (!candidate) { setSnapProposal(null); setSnapFeedback('No compatible attachment point is within snap range.'); return }
+    setSnapProposal({
+      kind: 'connector', connectorId, endpointKey: key,
+      sourcePortId: null, targetPortId: candidate.port.id,
+      sourceLabel: `${connector.name} endpoint ${key.toUpperCase()}`, targetLabel: portLabel(worldRef.current, candidate.port),
+      target: { ownerId: candidate.port.ownerId, portId: candidate.port.id },
+      message: `${connector.name} endpoint ${key.toUpperCase()} is ready to attach to ${portLabel(worldRef.current, candidate.port)}.`,
+    })
+  }, [])
+
+  const requestTrackSnap = useCallback((trackId, position, snapRadius = 0.45) => {
+    const track = worldRef.current.tracks.find((candidate) => candidate.id === trackId)
+    if (!track) return
+    const tangent = { x: Math.cos(track.angle), y: Math.sin(track.angle) }
+    const endpoints = [
+      { id: `${track.id}:start`, name: 'Start', position: { x: position.x - tangent.x * track.length / 2, y: position.y - tangent.y * track.length / 2 } },
+      { id: `${track.id}:end`, name: 'End', position: { x: position.x + tangent.x * track.length / 2, y: position.y + tangent.y * track.length / 2 } },
+    ]
+    let best = null
+    for (const endpoint of endpoints) {
+      const candidate = nearestPort(worldRef.current, endpoint.position, snapRadius, (port) => port.ownerId !== trackId && port.kind === 'track' && !port.id.endsWith(':center'))
+      if (candidate && (!best || candidate.distance < best.distance)) best = { endpoint, ...candidate }
+    }
+    if (!best) { setSnapProposal(null); setSnapFeedback('No compatible track endpoint is within snap range.'); return }
+    const alignedCenter = { x: position.x + best.resolved.x - best.endpoint.position.x, y: position.y + best.resolved.y - best.endpoint.position.y }
+    setSnapProposal({
+      kind: 'track', trackId, alignedCenter,
+      sourcePortId: best.endpoint.id, targetPortId: best.port.id,
+      sourceLabel: `${track.name} · ${best.endpoint.name}`, targetLabel: portLabel(worldRef.current, best.port),
+      message: `${track.name} ${best.endpoint.name.toLowerCase()} is aligned with ${portLabel(worldRef.current, best.port)}.`,
+    })
+  }, [])
+
+  const confirmSnap = useCallback(() => {
+    const proposal = snapProposal
+    if (!proposal) return
+    if (proposal.kind === 'connector') {
+      updateConnector(proposal.connectorId, { [proposal.endpointKey]: { type: 'port', ownerId: proposal.target.ownerId, portId: proposal.target.portId } })
+    } else if (proposal.kind === 'track') {
+      updateTrack(proposal.trackId, { center: proposal.alignedCenter })
+    } else if (proposal.kind === 'joint') {
+      commitScenarioEdit((scenario) => {
+        const body = scenario.bodies.find((candidate) => candidate.id === proposal.movingOwnerId)
+        const track = scenario.tracks.find((candidate) => candidate.id === proposal.movingOwnerId)
+        if (body) body.position = { x: body.position.x + proposal.delta.x, y: body.position.y + proposal.delta.y }
+        if (track) track.center = { x: track.center.x + proposal.delta.x, y: track.center.y + proposal.delta.y }
+        const first = worldRef.current.portIndex.get(proposal.firstPortId)
+        const second = worldRef.current.portIndex.get(proposal.secondPortId)
+        scenario.joints.push({ id: nextId(proposal.jointType), type: proposal.jointType, a: { type: 'port', ownerId: first.ownerId, portId: first.id }, b: { type: 'port', ownerId: second.ownerId, portId: second.id } })
+      })
+    }
+    setSnapFeedback(`Snapped: ${proposal.sourceLabel} → ${proposal.targetLabel}`)
+    setSnapProposal(null)
+  }, [commitScenarioEdit, snapProposal, updateConnector, updateTrack])
+
+  const cancelSnap = useCallback(() => {
+    setSnapProposal(null)
+    setConnectionPortId(null)
+    setSnapFeedback('Snap cancelled; the object remains freely placed.')
+  }, [])
 
   const disconnectConnector = useCallback((connectorId) => {
     const connector = worldRef.current.connectors.find((candidate) => candidate.id === connectorId)
@@ -223,25 +322,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     if (!['gravity', 'floor'].includes(target)) setSelectedId(id)
   }, [commitScenarioEdit])
 
-  const moveEntity = useCallback((id, position, snapRadius = 0.45) => {
+  const moveEntity = useCallback((id, position) => {
     if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position, velocity: { x: 0, y: 0 } })
-    else {
-      const track = worldRef.current.tracks.find((candidate) => candidate.id === id)
-      if (!track) return
-      const tangent = { x: Math.cos(track.angle), y: Math.sin(track.angle) }
-      const endpoints = [-1, 1].map((sign) => ({ x: position.x + tangent.x * track.length / 2 * sign, y: position.y + tangent.y * track.length / 2 * sign }))
-      const targets = worldRef.current.tracks.filter((candidate) => candidate.id !== id).flatMap((candidate) => {
-        const direction = { x: Math.cos(candidate.angle), y: Math.sin(candidate.angle) }
-        return [-1, 1].map((sign) => ({ x: candidate.center.x + direction.x * candidate.length / 2 * sign, y: candidate.center.y + direction.y * candidate.length / 2 * sign }))
-      })
-      let snapped = position
-      let best = snapRadius
-      for (const endpoint of endpoints) for (const target of targets) {
-        const distance = Math.hypot(endpoint.x - target.x, endpoint.y - target.y)
-        if (distance < best) { best = distance; snapped = { x: position.x + target.x - endpoint.x, y: position.y + target.y - endpoint.y } }
-      }
-      updateTrack(id, { center: snapped })
-    }
+    else if (worldRef.current.tracks.some((track) => track.id === id)) updateTrack(id, { center: position })
   }, [updateBody, updateTrack])
 
   const placeBodyAtStart = useCallback((trackId, bodyId = selectedRef.current) => {
@@ -292,9 +375,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const selectedConnectorState = useMemo(() => selectedEntity?.a ? connectorState(world, selectedEntity) : null, [selectedEntity, world])
 
   return {
-    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId,
+    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, snapProposal, snapFeedback,
     running, setRunning, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
-    updateBody, updateTrack, updateConnector, moveConnectorEndpoint, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
+    updateBody, updateTrack, updateConnector, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
     addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, placeBodyAtStart, prepareOrbit,
   }
 }

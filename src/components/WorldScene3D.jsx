@@ -38,7 +38,7 @@ function addTransformGizmos(group, entity, center) {
   group.add(start)
 }
 
-export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMoveConstraint, onTransform, onMoveConnectorEndpoint, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays }) {
+export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal }) {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
   const cameraRef = useRef(null)
@@ -51,7 +51,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
   const springsRef = useRef(new Map())
   const trailRef = useRef(null)
   const gridRef = useRef(null)
-  const handlersRef = useRef({ onSelect, onMove, onMoveConstraint, onTransform, onMoveConnectorEndpoint, running })
+  const handlersRef = useRef({ onSelect, onMove, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running })
   const worldStateRef = useRef(world)
   const assemblyRenderKey = useMemo(() => JSON.stringify({
     running,
@@ -60,12 +60,13 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
     connectors: world.connectors.map((connector) => ({ id: connector.id, name: connector.name, type: connector.type, a: connector.a, b: connector.b, length: connector.length, restLength: connector.restLength, stiffness: connector.stiffness, damping: connector.damping })),
     forces: world.forces,
     ports: world.ports,
+    snapProposal,
     selectedBeam: running ? null : world.bodies.find((body) => body.id === selectedId && body.shape === 'beam'),
-  }), [running, selectedId, world.bodies, world.connectors, world.forces, world.ports, world.tracks])
+  }), [running, selectedId, snapProposal, world.bodies, world.connectors, world.forces, world.ports, world.tracks])
 
   useEffect(() => {
-    handlersRef.current = { onSelect, onMove, onMoveConstraint, onTransform, onMoveConnectorEndpoint, running }
-  }, [onMove, onMoveConnectorEndpoint, onMoveConstraint, onSelect, onTransform, running])
+    handlersRef.current = { onSelect, onMove, onMoveConstraint, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running }
+  }, [onMove, onMoveConnectorEndpoint, onMoveConstraint, onRequestConnectorSnap, onRequestTrackSnap, onSelect, onTransform, running])
 
   useEffect(() => { worldStateRef.current = world }, [world])
 
@@ -139,6 +140,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
     let draggingGizmo = null
     let draggingEndpoint = null
     let lastPointerPosition = null
+    let lastConstraintPosition = null
 
     const setPointer = (event) => {
       const rect = renderer.domElement.getBoundingClientRect()
@@ -188,8 +190,11 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
       if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
         lastPointerPosition = { x: intersection.x, y: intersection.y }
         if (draggingId) handlersRef.current.onMove(draggingId, { x: intersection.x, y: intersection.y })
-        if (draggingConstraint) handlersRef.current.onMoveConstraint(draggingConstraint.id, { x: intersection.x - draggingConstraint.offset.x, y: intersection.y - draggingConstraint.offset.y }, snapRadius())
-        if (draggingEndpoint) handlersRef.current.onMoveConnectorEndpoint(draggingEndpoint.connectorId, draggingEndpoint.endpoint, { x: intersection.x, y: intersection.y }, false)
+        if (draggingConstraint) {
+          lastConstraintPosition = { x: intersection.x - draggingConstraint.offset.x, y: intersection.y - draggingConstraint.offset.y }
+          handlersRef.current.onMoveConstraint(draggingConstraint.id, lastConstraintPosition)
+        }
+        if (draggingEndpoint) handlersRef.current.onMoveConnectorEndpoint(draggingEndpoint.connectorId, draggingEndpoint.endpoint, { x: intersection.x, y: intersection.y })
         if (draggingGizmo) {
           const dx = intersection.x - draggingGizmo.center.x
           const dy = intersection.y - draggingGizmo.center.y
@@ -203,12 +208,14 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
     }
 
     const release = () => {
-      if (draggingEndpoint && lastPointerPosition) handlersRef.current.onMoveConnectorEndpoint(draggingEndpoint.connectorId, draggingEndpoint.endpoint, lastPointerPosition, true, snapRadius())
+      if (draggingEndpoint && lastPointerPosition) handlersRef.current.onRequestConnectorSnap(draggingEndpoint.connectorId, draggingEndpoint.endpoint, lastPointerPosition, snapRadius())
+      if (draggingConstraint && lastConstraintPosition) handlersRef.current.onRequestTrackSnap(draggingConstraint.id, lastConstraintPosition, snapRadius())
       draggingId = null
       draggingConstraint = null
       draggingGizmo = null
       draggingEndpoint = null
       lastPointerPosition = null
+      lastConstraintPosition = null
       controls.enabled = true
     }
 
@@ -380,6 +387,15 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
         group.add(ramp)
         if (constraint.id === selectedId && !running) addTransformGizmos(group, constraint, constraint.center)
     }
+    if (snapProposal?.kind === 'track') {
+      const track = renderWorld.tracks.find((candidate) => candidate.id === snapProposal.trackId)
+      if (track) {
+        const ghost = new THREE.Mesh(new THREE.BoxGeometry(track.length, track.thickness + 0.05, 1.42), new THREE.MeshBasicMaterial({ color: 0x00a965, transparent: true, opacity: 0.35, wireframe: true }))
+        ghost.position.set(snapProposal.alignedCenter.x, snapProposal.alignedCenter.y, 0.02)
+        ghost.rotation.z = track.angle
+        group.add(ghost)
+      }
+    }
     const selectedBeam = renderWorld.bodies.find((body) => body.id === selectedId && body.shape === 'beam')
     if (selectedBeam && !running) addTransformGizmos(group, selectedBeam, selectedBeam.position)
 
@@ -411,15 +427,22 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
       }
     }
     if (!running) for (const port of renderWorld.ports) {
-      if (!port.custom && port.ownerId !== selectedId && port.id !== selectedId) continue
+      const isSnapSource = port.id === snapProposal?.sourcePortId
+      const isSnapTarget = port.id === snapProposal?.targetPortId
+      if (!port.custom && port.ownerId !== selectedId && port.id !== selectedId && !isSnapSource && !isSnapTarget) continue
       const resolved = renderWorld.portIndex.get(port.id) && resolveEndpoint(renderWorld, { type: 'port', ownerId: port.ownerId, portId: port.id })
       if (!resolved) continue
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(port.custom ? 0.12 : 0.085, 14, 9), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
+      const marker = new THREE.Mesh(new THREE.SphereGeometry(isSnapTarget ? 0.18 : port.custom ? 0.12 : 0.085, 14, 9), new THREE.MeshBasicMaterial({ color: isSnapSource ? 0xf2cf00 : 0x00a965 }))
       marker.position.set(resolved.position.x, resolved.position.y, 0.24)
       marker.userData.entityId = port.id
       forceGroup.add(marker)
+      if (isSnapTarget) {
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.045, 10, 28), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
+        halo.position.set(resolved.position.x, resolved.position.y, 0.22)
+        forceGroup.add(halo)
+      }
     }
-  }, [assemblyRenderKey, running, selectedId])
+  }, [assemblyRenderKey, running, selectedId, snapProposal])
 
   useEffect(() => {
     for (const force of world.connectors) {
@@ -463,6 +486,12 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onMo
       onKeyDown={onKeyDown}
     >
       <div className="scene-hint" aria-hidden="true"><span>Drag to orbit</span><span>Scroll to zoom</span></div>
+      <div className="visually-hidden" role="group" aria-label="Attachment ports">
+        {world.ports.map((port) => {
+          const owner = [...world.bodies, ...world.tracks].find((candidate) => candidate.id === port.ownerId)
+          return <button key={port.id} type="button" onClick={() => onSelect(port.id)}>{owner?.name ?? port.ownerId} {port.name} port</button>
+        })}
+      </div>
       <div className="scene-status" aria-live="polite">
         {world.bodies.find((body) => body.id === selectedId)?.name ?? 'No selection'} · {world.time.toFixed(2)} s · {world.constraints.some((constraint) => constraint.type === 'ground') ? 'ground on' : 'reference grid only'}
       </div>

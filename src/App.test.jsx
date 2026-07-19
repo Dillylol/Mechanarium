@@ -59,6 +59,23 @@ describe('Mechanarium assembly studio', () => {
     expect(screen.getByRole('spinbutton', { name: 'Maximum length (m)' })).toBeInTheDocument()
   })
 
+  it('previews and explicitly confirms structural snaps', async () => {
+    const user = userEvent.setup(); render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add Beam' }))
+    await user.click(screen.getByRole('button', { name: 'Add Attachment Point' }))
+    await user.click(screen.getByRole('button', { name: 'Add Block' }))
+    await user.click(screen.getByRole('button', { name: 'Add Attachment Point' }))
+    await user.click(screen.getByRole('button', { name: 'Select Beam Port 1' }))
+    await user.click(screen.getByRole('button', { name: 'Use as first structural port' }))
+    await user.click(screen.getByRole('button', { name: 'Select Block Port 2' }))
+    await user.click(screen.getByRole('button', { name: 'Preview rigid snap' }))
+    expect(screen.getByRole('dialog', { name: 'Snap placement' })).toHaveTextContent('Snap candidate')
+    expect(screen.getByRole('region', { name: 'Assembly constraints' })).not.toHaveTextContent('rigid')
+    await user.click(screen.getByRole('button', { name: 'Snap to place' }))
+    expect(screen.getByRole('region', { name: 'Assembly constraints' })).toHaveTextContent('rigid')
+    expect(screen.getByText(/Snapped:/)).toBeInTheDocument()
+  })
+
   it('loads all new prepared SHM systems', async () => {
     const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('tab', { name: /Labs/ }))

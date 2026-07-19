@@ -8,7 +8,7 @@ import TelemetryChart from './TelemetryChart.jsx'
 
 const format = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : '—'
 
-export default function DataRail({ world, selectedBody, selectedEntity, connectorState, connectionPortId, history, onUpdateBody, onUpdateTrack, onUpdateConnector, onUpdatePort, onPinToWorld, onConnectPort, onUpdateGravity, onRemoveEntity, onUpdateForce, onRemoveForce, onUpdateConstraint, onRemoveConstraint, onPrepareOrbit, onPlaceAtStart, onExport, running }) {
+export default function DataRail({ world, selectedBody, selectedEntity, connectorState, connectionPortId, history, onSelectEntity, onUpdateBody, onUpdateTrack, onUpdateConnector, onUpdatePort, onPinToWorld, onConnectPort, onUpdateGravity, onRemoveEntity, onUpdateForce, onRemoveForce, onUpdateConstraint, onRemoveConstraint, onPrepareOrbit, onPlaceAtStart, onExport, running }) {
   const [mode, setMode] = useState('energy')
   const kinetic = world.metrics.translationalKinetic + world.metrics.rotationalKinetic
   const momentum = Math.hypot(world.metrics.linearMomentum.x, world.metrics.linearMomentum.y)
@@ -74,6 +74,7 @@ export default function DataRail({ world, selectedBody, selectedEntity, connecto
 
       <section className="assembly-diagnostics" aria-labelledby="assembly-diagnostics-title">
         <div className="rail-section-heading"><span id="assembly-diagnostics-title">Assembly constraints</span><small>{world.joints.length + world.connectors.length}</small></div>
+        {world.ports.some((port) => port.custom) && <div className="port-shortcuts" aria-label="Custom attachment points">{world.ports.filter((port) => port.custom).map((port) => { const owner = [...world.bodies, ...world.tracks].find((candidate) => candidate.id === port.ownerId); return <button key={port.id} type="button" className={port.id === selectedEntity.id ? 'active' : ''} onClick={() => onSelectEntity(port.id)}>Select {owner?.name ?? port.ownerId} {port.name}</button> })}</div>}
         {world.diagnostics.length ? <ul className="diagnostic-list">{world.diagnostics.map((message) => <li key={message}>{message}</li>)}</ul> : <p className="environment-help">Topology valid. Run may begin.</p>}
         {world.joints.map((joint) => <p className="constraint-row" key={joint.id}><strong>{joint.type}</strong><span>{joint.a.portId ?? 'world'} ↔ {joint.b.portId ?? 'world'}</span></p>)}
       </section>
