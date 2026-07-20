@@ -53,6 +53,7 @@ The gate covers spline continuity/contact, loop completion and detachment, Scena
 - [`docs/SCENARIO-FORMAT.md`](./docs/SCENARIO-FORMAT.md) — Scenario v4 and migration contract
 - [`docs/WORLD-BUILDING.md`](./docs/WORLD-BUILDING.md) — assembly, spline editing, ports, connectors, and keyboard workflow
 - [`docs/milestones/MILESTONE-7.md`](./docs/milestones/MILESTONE-7.md) — curved-track, Vector-preview, and tutorial milestone report
+- [`docs/AUDIT-LOG.md`](./docs/AUDIT-LOG.md) — dated release evidence, change history, limitations, and demo sign-off
 
 ## Current boundary
 
