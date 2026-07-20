@@ -81,4 +81,12 @@ Estimated readiness at sign-off:
 - Public hackathon demonstration after Pages deployment: **90–95%**
 - Broad classroom production release: **70–75%**
 
-Pushing this audit and the two reviewed commits to `main` triggers `.github/workflows/deploy-pages.yml`. Final public release acceptance requires confirming that workflow and completing the deployed-page smoke test.
+### Publication verification
+
+- The reviewed feature commits and audit were pushed to `origin/main`.
+- GitHub Pages workflow [run 29739129782](https://github.com/Dillylol/Mechanarium/actions/runs/29739129782) completed its build and deploy jobs successfully.
+- `https://dillylol.github.io/Mechanarium/` returned HTTP 200 with the Mechanarium page title.
+- The deployed `index-BNaolyC_.js` production asset returned HTTP 200 and contained the `Spline Roller Coaster` release marker, matching the locally verified build.
+- GitHub reported a non-blocking runner advisory for actions that still declare Node.js 20 internally; the workflow forced those actions onto Node.js 24 and completed successfully.
+
+The 2026-07-20 technical-demo release is therefore accepted within the documented boundaries. The remaining manual accessibility, device, and browser matrix is classroom-release hardening rather than a blocker for the public demo.
