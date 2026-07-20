@@ -75,8 +75,12 @@ export function connectorLoads(world) {
   return loads
 }
 
-const inverseMass = (owner) => (!owner || owner.locked || owner.mode === 'track' ? 0 : 1 / owner.mass)
-const inverseInertia = (owner) => (!owner || owner.locked || owner.mode === 'track' ? 0 : 1 / Math.max(owner.assemblyInertia ?? owner.inertia ?? 0, 1e-9))
+const isStaticOwner = (owner) => !owner || owner.locked || owner.mode === 'track' || owner.type === 'segment'
+const inverseMass = (owner) => (isStaticOwner(owner) || !Number.isFinite(owner.mass) || owner.mass <= 0 ? 0 : 1 / owner.mass)
+const inverseInertia = (owner) => {
+  const inertia = owner?.assemblyInertia ?? owner?.inertia
+  return isStaticOwner(owner) || !Number.isFinite(inertia) || inertia <= 0 ? 0 : 1 / inertia
+}
 const cross = (a, b) => a.x * b.y - a.y * b.x
 
 function moveOwner(owner, delta) {
@@ -105,19 +109,19 @@ function solveDistance(world, aEndpoint, bEndpoint, targetLength, maxOnly, dt) {
   const leverA = cross(a.offset, normal)
   const leverB = cross(b.offset, normal)
   const inverseTotal = inverseA + inverseB + leverA ** 2 * inverseAngularA + leverB ** 2 * inverseAngularB
-  if (inverseTotal === 0) return 0
+  if (!Number.isFinite(inverseTotal) || inverseTotal <= 0) return 0
   moveOwner(a.owner, scale(normal, error * inverseA / inverseTotal))
   moveOwner(b.owner, scale(normal, -error * inverseB / inverseTotal))
-  if (a.owner) a.owner.angle += error * leverA * inverseAngularA / inverseTotal
-  if (b.owner) b.owner.angle -= error * leverB * inverseAngularB / inverseTotal
+  if (inverseAngularA > 0) a.owner.angle += error * leverA * inverseAngularA / inverseTotal
+  if (inverseAngularB > 0) b.owner.angle -= error * leverB * inverseAngularB / inverseTotal
   const relativeSpeed = dot(subtract(b.velocity, a.velocity), normal)
   const correctiveSpeed = 0
   const impulseMagnitude = (relativeSpeed + correctiveSpeed) / inverseTotal
   if (impulseMagnitude > 0 || !maxOnly) {
     impulseOwner(a.owner, scale(normal, impulseMagnitude))
     impulseOwner(b.owner, scale(normal, -impulseMagnitude))
-    if (a.owner) a.owner.angularVelocity += leverA * impulseMagnitude * inverseAngularA
-    if (b.owner) b.owner.angularVelocity -= leverB * impulseMagnitude * inverseAngularB
+    if (inverseAngularA > 0) a.owner.angularVelocity += leverA * impulseMagnitude * inverseAngularA
+    if (inverseAngularB > 0) b.owner.angularVelocity -= leverB * impulseMagnitude * inverseAngularB
   }
   return Math.max(0, impulseMagnitude / dt)
 }
@@ -135,15 +139,19 @@ export function solveAssemblyConstraints(world, dt, iterations = 8) {
       if (joint.type === 'rigid' && joint.restAngle !== undefined) {
         const a = joint.a.type === 'port' ? ownerById(world, joint.a.ownerId) : null
         const b = joint.b.type === 'port' ? ownerById(world, joint.b.ownerId) : null
-        if (a && b && a.mode !== 'track' && b.mode !== 'track') {
+        if (a && b) {
           const error = ((b.angle - a.angle - joint.restAngle + Math.PI) % (Math.PI * 2)) - Math.PI
-          const inverseA = 1 / Math.max(a.inertia, 1e-6)
-          const inverseB = 1 / Math.max(b.inertia, 1e-6)
-          a.angle += error * inverseA / (inverseA + inverseB)
-          b.angle -= error * inverseB / (inverseA + inverseB)
-          const omega = (a.angularVelocity * a.inertia + b.angularVelocity * b.inertia) / (a.inertia + b.inertia)
-          a.angularVelocity = omega
-          b.angularVelocity = omega
+          const inverseA = inverseInertia(a)
+          const inverseB = inverseInertia(b)
+          const inverseTotal = inverseA + inverseB
+          if (inverseTotal > 0) {
+            if (inverseA > 0) a.angle += error * inverseA / inverseTotal
+            if (inverseB > 0) b.angle -= error * inverseB / inverseTotal
+            const relativeAngularVelocity = (b.angularVelocity ?? 0) - (a.angularVelocity ?? 0)
+            const angularImpulse = relativeAngularVelocity / inverseTotal
+            if (inverseA > 0) a.angularVelocity += angularImpulse * inverseA
+            if (inverseB > 0) b.angularVelocity -= angularImpulse * inverseB
+          }
         }
       }
     }

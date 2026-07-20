@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { telemetryToCsv } from './export.js'
+import { notebookJson, notebookToCsv, telemetryToCsv } from './export.js'
 
 describe('telemetry export', () => {
+  it('exports notebook samples and gate events separately from world JSON', () => {
+    const notebook = { version: 1, scenarioId: 'lab', trials: [{ id: 'trial-1', name: 'Baseline', independentVariable: 'angle', independentValue: '20 deg', notes: 'prediction', samples: [{ time: 0.1, bodyId: 'cart', bodyName: 'Cart', x: 1, y: 2, vx: 3, vy: 0, ax: 1, ay: 0, speed: 3 }], gateEvents: [{ time: 0.2, bodyId: 'cart', bodyName: 'Cart', gateId: 'gate-a', gateName: 'Gate A', direction: 1, position: { x: 2, y: 0 }, velocity: { x: 4, y: 0 }, speed: 4 }] }] }
+    const csv = notebookToCsv(notebook)
+    expect(csv).toContain('record_type,trial_id,trial_name')
+    expect(csv).toContain('sample,trial-1,Baseline')
+    expect(csv).toContain('gate,trial-1,Baseline')
+    expect(notebookJson(notebook)).toContain('"scenarioId": "lab"')
+  })
   it('creates a labelled SI-unit CSV and escapes body names', () => {
     const csv = telemetryToCsv([{
       time: 1,

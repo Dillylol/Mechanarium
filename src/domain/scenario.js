@@ -1,5 +1,6 @@
 import { INTEGRATORS } from '../physics/constants.js'
 import { isFiniteVector } from '../physics/vector.js'
+import { createInstrument, validateInstrument } from './instruments.js'
 
 export const SCENARIO_VERSION = 2
 export const BODY_SHAPES = Object.freeze(['circle', 'box', 'beam'])
@@ -168,9 +169,11 @@ export function migrateScenario(input) {
     scenario.ports ??= []
     scenario.joints ??= []
     scenario.connectors ??= []
+    scenario.instruments ??= []
     scenario.forces ??= []
     scenario.constraints ??= []
     scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
+    scenario.instruments = scenario.instruments.map((instrument) => createInstrument(instrument.type, instrument))
     return scenario
   }
   if (input.version !== 1) return copy(input)
@@ -201,6 +204,7 @@ export function migrateScenario(input) {
     constraints: (source.constraints ?? []).filter((constraint) => constraint.type === 'ground'),
     tracks: (source.constraints ?? []).filter((constraint) => constraint.type === 'incline').map(fromLegacyIncline),
     connectors,
+    instruments: [],
     ports: [],
     joints: [],
   }
@@ -227,9 +231,11 @@ export function validateScenario(input) {
   if (!scenario.gravity || !finiteNonNegative(scenario.gravity.g) || !isFiniteVector(scenario.gravity.direction)) errors.push('World gravity requires a non-negative magnitude and finite direction.')
 
   const ids = new Set()
+  const bodyIds = new Set()
   for (const body of scenario.bodies ?? []) {
     if (!body.id || ids.has(body.id)) errors.push(`Body id must be unique: ${body.id ?? 'missing'}.`)
     ids.add(body.id)
+    bodyIds.add(body.id)
     if (!BODY_SHAPES.includes(body.shape)) errors.push(`Body ${body.id} has an unsupported shape.`)
     if (!finitePositive(body.mass)) errors.push(`Body ${body.id} mass must be positive.`)
     if (!isFiniteVector(body.position) || !isFiniteVector(body.velocity)) errors.push(`Body ${body.id} requires finite position and velocity.`)
@@ -242,33 +248,39 @@ export function validateScenario(input) {
     ids.add(track.id)
     if (track.type !== 'segment' || !isFiniteVector(track.center) || !finitePositive(track.length) || !finitePositive(track.thickness) || !Number.isFinite(track.angle)) errors.push(`Track ${track.id} has invalid geometry.`)
   }
+  const physicalOwnerIds = new Set(ids)
+  for (const instrument of scenario.instruments ?? []) {
+    if (!instrument.id || ids.has(instrument.id)) errors.push(`Instrument id must be unique: ${instrument.id ?? 'missing'}.`)
+    ids.add(instrument.id)
+    errors.push(...validateInstrument(instrument, bodyIds))
+  }
   const ports = allPorts(scenario)
   const portIds = new Set()
   for (const port of ports) {
     if (!port.id || portIds.has(port.id)) errors.push(`Port id must be unique: ${port.id ?? 'missing'}.`)
     portIds.add(port.id)
-    if (!ids.has(port.ownerId) || !isFiniteVector(port.localPosition)) errors.push(`Port ${port.id} has an invalid owner or position.`)
+    if (!physicalOwnerIds.has(port.ownerId) || !isFiniteVector(port.localPosition)) errors.push(`Port ${port.id} has an invalid owner or position.`)
   }
   for (const force of scenario.forces ?? []) {
     if (!FORCE_TYPES.includes(force.type)) errors.push(`Unsupported force type: ${force.type}.`)
-    if (force.bodyId && !ids.has(force.bodyId)) errors.push(`Force references unknown body: ${force.bodyId}.`)
+    if (force.bodyId && !bodyIds.has(force.bodyId)) errors.push(`Force references unknown body: ${force.bodyId}.`)
   }
   for (const constraint of scenario.constraints ?? []) {
     if (!CONSTRAINT_TYPES.includes(constraint.type)) errors.push(`Unsupported constraint type: ${constraint.type}.`)
-    if (constraint.bodyId && !ids.has(constraint.bodyId)) errors.push(`Constraint references unknown body: ${constraint.bodyId}.`)
+    if (constraint.bodyId && !bodyIds.has(constraint.bodyId)) errors.push(`Constraint references unknown body: ${constraint.bodyId}.`)
   }
   for (const connector of scenario.connectors ?? []) {
     if (!CONNECTOR_TYPES.includes(connector.type)) errors.push(`Connector ${connector.id} has an unsupported type.`)
     if (!finitePositive(connector.type === 'rope' ? connector.length : connector.restLength)) errors.push(`Connector ${connector.id} requires a positive length.`)
-    validateEndpoint(connector.a, ids, portIds, `Connector ${connector.id}`, errors)
-    validateEndpoint(connector.b, ids, portIds, `Connector ${connector.id}`, errors)
+    validateEndpoint(connector.a, physicalOwnerIds, portIds, `Connector ${connector.id}`, errors)
+    validateEndpoint(connector.b, physicalOwnerIds, portIds, `Connector ${connector.id}`, errors)
   }
   const jointPairs = new Set()
   const jointPortUsage = new Set()
   for (const joint of scenario.joints ?? []) {
     if (!JOINT_TYPES.includes(joint.type)) errors.push(`Joint ${joint.id} has an unsupported type.`)
-    validateEndpoint(joint.a, ids, portIds, `Joint ${joint.id}`, errors)
-    validateEndpoint(joint.b, ids, portIds, `Joint ${joint.id}`, errors)
+    validateEndpoint(joint.a, physicalOwnerIds, portIds, `Joint ${joint.id}`, errors)
+    validateEndpoint(joint.b, physicalOwnerIds, portIds, `Joint ${joint.id}`, errors)
     const key = [joint.a?.portId, joint.b?.portId].sort().join('|')
     if (jointPairs.has(key)) errors.push(`Joint ${joint.id} duplicates an existing connection.`)
     jointPairs.add(key)

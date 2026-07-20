@@ -12,9 +12,20 @@ const PRESET_ALIASES = [
   ['orbit', 'orbital-motion'],
 ]
 
-export function planWorldLocally(message) {
+export function planWorldLocally(message, context = {}) {
   const normalized = message.toLowerCase()
   const actions = []
+  const latestTrial = context.telemetry?.lab?.trials?.at(-1)
+  const guideStep = context.telemetry?.lab?.guide_step
+
+  if (latestTrial && /(data|measure|evidence|result|trial|acceleration|speed|time)/.test(normalized)) {
+    const result = latestTrial.gate_results?.at(-1)
+    const observation = result
+      ? `The latest gates measured Δt=${Number(result.interval).toFixed(4)} s, average speed=${Number(result.averageSpeed).toFixed(3)} m/s, and acceleration=${Number(result.acceleration).toFixed(3)} m/s².`
+      : `The latest trial contains ${latestTrial.sample_count} samples and ${latestTrial.gate_event_count} gate events, but no paired-gate result yet.`
+    const guide = guideStep ? ` Your current investigation step is: ${guideStep}.` : ''
+    return { message: `${observation}${guide} Which measured quantity supports or challenges your prediction?`, actions: [], source: 'local' }
+  }
 
   for (const [phrase, target] of PRESET_ALIASES) {
     if ((normalized.includes('load') || normalized.includes('show') || normalized.includes('start')) && normalized.includes(phrase)) {
@@ -33,10 +44,12 @@ export function planWorldLocally(message) {
   if (/attachment point|\bport\b/.test(normalized)) actions.push({ type: 'add_port', target: 'attachment' })
   if (/gravity/.test(normalized)) actions.push({ type: /(remove|delete|turn off|disable|zero.?g)/.test(normalized) ? 'remove_force' : 'add_force', target: 'gravity', value: 9.80665 })
   if (/attractor|central force/.test(normalized)) actions.push({ type: 'add_force', target: 'central' })
+  if (/photogate|photo gate/.test(normalized)) actions.push({ type: 'add_instrument', target: 'photogate' })
+  if (/ruler|meter stick|metre stick/.test(normalized)) actions.push({ type: 'add_instrument', target: 'ruler' })
 
   if (actions.length === 0) {
     return {
-      message: 'I can build with bodies, ramps, beams, ports, springs, ropes, gravity, joints, attractors, or a prepared SHM experiment. What should I place first?',
+      message: `${guideStep ? `Your current investigation step is: ${guideStep}. ` : ''}I can build apparatus, place rulers and photogates, or examine recorded evidence. What do you predict the next measurement will show?`,
       actions: [],
       source: 'local',
     }
@@ -61,6 +74,6 @@ export async function askWorldAgent({ message, scenario, telemetry, signal }) {
     return { ...(await response.json()), source: 'openai' }
   } catch (error) {
     if (error.name === 'AbortError') throw error
-    return planWorldLocally(message)
+    return planWorldLocally(message, { scenario, telemetry })
   }
 }

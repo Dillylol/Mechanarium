@@ -2,6 +2,8 @@
 
 **Build worlds. Discover the laws that move them.**
 
+Try the live app at [dillylol.github.io/Mechanarium](https://dillylol.github.io/Mechanarium/).
+
 Mechanarium is an interactive three-dimensional mechanics laboratory for learning physics through construction, experimentation, measurement, and guided observation. Its workspace is visually 3D while its deterministic mechanics remain planar.
 
 ## Current capabilities
@@ -14,6 +16,8 @@ Mechanarium is an interactive three-dimensional mechanics laboratory for learnin
 - Paused KSP-inspired assembly editing: direct translation, angle/length gizmos, start ports, explicit snap previews and confirmation, connector handles, custom attachment points, and keyboard controls.
 - Nine prepared experiments, including inclined spring, rope pendulum, uniform-beam physical pendulum, and compound beam SHM systems.
 - Energy and kinematics telemetry, connector/beam/joint diagnostics, force vectors, trails, accessible tables, Scenario JSON, and SI CSV.
+- Nonphysical rulers and photogates with swept 120 Hz crossing detection, finite apertures, body targeting, reproducible uncertainty, and paired-gate calculations.
+- A guided ramp-motion laboratory with explicit trial recording, comparison plots, local notebook persistence, and normalized notebook JSON/CSV export.
 - Local deterministic and optional OpenAI-backed world agents with Scenario v2 assembly actions.
 
 ## Development
@@ -39,7 +43,7 @@ npm run build
 npm run check
 ```
 
-The current gate has 45 tests across ten files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
+The current gate has 59 tests across 11 files, including a 60-second numerical assembly soak. See [`docs/TESTING.md`](./docs/TESTING.md).
 
 ## Documentation
 
@@ -48,6 +52,8 @@ The current gate has 45 tests across ten files, including a 60-second numerical 
 - [`docs/SCENARIO-FORMAT.md`](./docs/SCENARIO-FORMAT.md) â€” Scenario v2 and migration contract
 - [`docs/WORLD-BUILDING.md`](./docs/WORLD-BUILDING.md) â€” assembly editing, ports, connectors, tracks, and keyboard workflow
 - [`docs/milestones/MILESTONE-4.md`](./docs/milestones/MILESTONE-4.md) â€” build/test/report record for this milestone
+
+- [`docs/milestones/MILESTONE-6.md`](./docs/milestones/MILESTONE-6.md) - measurement and guided-inquiry milestone report
 
 ## Current boundary
 

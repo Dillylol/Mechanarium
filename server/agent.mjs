@@ -7,7 +7,7 @@ const model = process.env.OPENAI_MODEL ?? 'gpt-5.6-terra'
 const instructions = `You are the Mechanarium world-building agent and Socratic physics guide.
 Turn the student's request into safe, small edits to the current mechanics scenario.
 Use only the supported Scenario v2 action schema. Connections must name exact entity and port ids from the scenario; reject ambiguous graphs in the message instead of guessing.
-When the student asks a conceptual question, prefer one concise observation and one targeted question.
+When the student asks a conceptual question, cite only supplied telemetry or trial measurements, label observation versus inference, and ask one targeted question.
 Use two-subscript interaction language such as F_Earth_on_body and F_track_on_body.
 Never claim a change happened unless you include the corresponding action.
 Keep the message under 80 words.`
@@ -29,8 +29,8 @@ const tool = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            type: { type: 'string', enum: ['add_body', 'add_track', 'add_beam', 'add_connector', 'add_port', 'add_joint', 'connect_endpoint', 'add_constraint', 'add_force', 'remove_force', 'remove_constraint', 'disable_gravity', 'load_preset', 'none'] },
-            target: { type: ['string', 'null'], enum: ['sphere', 'box', 'ramp', 'floor', 'spring', 'rope', 'beam', 'attachment', 'rigid', 'pin', 'gravity', 'central', 'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'orbital-motion', 'inclined-spring-oscillator', 'rope-pendulum', 'physical-pendulum', 'compound-pendulum', null] },
+            type: { type: 'string', enum: ['add_body', 'add_track', 'add_beam', 'add_connector', 'add_port', 'add_instrument', 'add_joint', 'connect_endpoint', 'add_constraint', 'add_force', 'remove_force', 'remove_constraint', 'disable_gravity', 'load_preset', 'none'] },
+            target: { type: ['string', 'null'], enum: ['sphere', 'box', 'ramp', 'floor', 'spring', 'rope', 'beam', 'attachment', 'ruler', 'photogate', 'rigid', 'pin', 'gravity', 'central', 'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'orbital-motion', 'inclined-spring-oscillator', 'rope-pendulum', 'physical-pendulum', 'compound-pendulum', null] },
             name: { type: ['string', 'null'] },
             x: { type: ['number', 'null'] },
             y: { type: ['number', 'null'] },

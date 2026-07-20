@@ -4,11 +4,12 @@ import { connectorLoads } from '../physics/assembly.js'
 import { netWorldForce } from '../physics/forces.js'
 import EnvironmentInspector from './EnvironmentInspector.jsx'
 import Inspector from './Inspector.jsx'
+import LabPanel from './LabPanel.jsx'
 import TelemetryChart from './TelemetryChart.jsx'
 
 const format = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : '—'
 
-export default function DataRail({ world, selectedBody, selectedEntity, connectorState, connectionPortId, history, onSelectEntity, onUpdateBody, onUpdateTrack, onUpdateConnector, onUpdatePort, onPinToWorld, onConnectPort, onUpdateGravity, onRemoveEntity, onUpdateForce, onRemoveForce, onUpdateConstraint, onRemoveConstraint, onPrepareOrbit, onPlaceAtStart, onExport, running }) {
+export default function DataRail({ world, selectedId, selectedBody, selectedEntity, connectorState, connectionPortId, history, recordingStatus, pendingTrial, notebook, onArmTrial, onDiscardTrial, onSaveTrial, onDeleteTrial, onExportNotebookJson, onExportNotebookCsv, onSelectEntity, onUpdateBody, onUpdateTrack, onUpdateConnector, onUpdateInstrument, onUpdatePort, onPinToWorld, onConnectPort, onUpdateGravity, onRemoveEntity, onUpdateForce, onRemoveForce, onUpdateConstraint, onRemoveConstraint, onPrepareOrbit, onPlaceAtStart, onExport, running }) {
   const [mode, setMode] = useState('energy')
   const kinetic = world.metrics.translationalKinetic + world.metrics.rotationalKinetic
   const momentum = Math.hypot(world.metrics.linearMomentum.x, world.metrics.linearMomentum.y)
@@ -22,9 +23,10 @@ export default function DataRail({ world, selectedBody, selectedEntity, connecto
       <div className="data-mode-switch" role="tablist" aria-label="Measurement family">
         <button type="button" role="tab" aria-selected={mode === 'energy'} onClick={() => setMode('energy')}>Energy</button>
         <button type="button" role="tab" aria-selected={mode === 'kinematics'} onClick={() => setMode('kinematics')}>Kinematics</button>
+        <button type="button" role="tab" aria-selected={mode === 'lab'} onClick={() => setMode('lab')}>Lab</button>
       </div>
 
-      {mode === 'energy' ? (
+      {mode === 'lab' ? <LabPanel world={world} selectedId={selectedId} recordingStatus={recordingStatus} pendingTrial={pendingTrial} notebook={notebook} onSelect={onSelectEntity} onUpdate={onUpdateInstrument} onRemove={onRemoveEntity} onArm={onArmTrial} onDiscard={onDiscardTrial} onSave={onSaveTrial} onDeleteTrial={onDeleteTrial} onExportJson={onExportNotebookJson} onExportCsv={onExportNotebookCsv} running={running} /> : mode === 'energy' ? (
         <section className="metric-stack" aria-labelledby="measurements-title">
           <h3 id="measurements-title" className="visually-hidden">Energy measurements</h3>
           <article className="primary-metric"><small>Total energy</small><strong>{format(world.metrics.total)} <em>J</em></strong><span className={Math.abs(world.energyError.percent) < 0.1 ? 'stable' : ''}>Δ {format(world.energyError.percent, 3)}%</span></article>
@@ -42,11 +44,11 @@ export default function DataRail({ world, selectedBody, selectedEntity, connecto
         </section>
       )}
 
-      <section className="data-chart" aria-labelledby="history-chart-title">
+      {mode !== 'lab' && <section className="data-chart" aria-labelledby="history-chart-title">
         <div className="rail-section-heading"><span id="history-chart-title">{mode === 'energy' ? 'Energy history' : 'Kinematics history'}</span><Database size={15} /></div>
         <TelemetryChart history={history} mode={mode} />
         <button className="data-export" type="button" onClick={onExport}><Download size={15} />Export CSV</button>
-      </section>
+      </section>}
 
       <Inspector
         entity={selectedEntity}
