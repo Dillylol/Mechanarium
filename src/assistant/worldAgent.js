@@ -8,6 +8,10 @@ const PRESET_ALIASES = [
   ['rope pendulum', 'rope-pendulum'],
   ['physical pendulum', 'physical-pendulum'],
   ['compound pendulum', 'compound-pendulum'],
+  ['ideal atwood', 'ideal-atwood'],
+  ['static atwood', 'ideal-atwood'],
+  ['rotating atwood', 'rotating-atwood'],
+  ['atwood machine', 'rotating-atwood'],
   ['oscillator', 'spring-oscillator'],
   ['orbit', 'orbital-motion'],
 ]
@@ -41,6 +45,7 @@ export function planWorldLocally(message, context = {}) {
   if (/spring/.test(normalized)) actions.push({ type: 'add_force', target: 'spring' })
   if (/rope/.test(normalized)) actions.push({ type: 'add_connector', target: 'rope' })
   if (/beam/.test(normalized)) actions.push({ type: 'add_beam', target: 'beam' })
+  if (/wheel|pulley/.test(normalized)) actions.push({ type: 'add_wheel', target: 'wheel' })
   if (/attachment point|\bport\b/.test(normalized)) actions.push({ type: 'add_port', target: 'attachment' })
   if (/gravity/.test(normalized)) actions.push({ type: /(remove|delete|turn off|disable|zero.?g)/.test(normalized) ? 'remove_force' : 'add_force', target: 'gravity', value: 9.80665 })
   if (/attractor|central force/.test(normalized)) actions.push({ type: 'add_force', target: 'central' })
@@ -62,12 +67,14 @@ export function planWorldLocally(message, context = {}) {
   }
 }
 
-export async function askWorldAgent({ message, scenario, telemetry, signal }) {
+const agentEndpoint = import.meta.env.VITE_AGENT_API_URL?.trim() || '/api/agent'
+
+export async function askWorldAgent({ message, scenario, telemetry, history = [], signal }) {
   try {
-    const response = await fetch('/api/agent', {
+    const response = await fetch(agentEndpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message, scenario, telemetry }),
+      body: JSON.stringify({ message, scenario, telemetry, history: history.slice(-6) }),
       signal,
     })
     if (!response.ok) throw new Error('Agent endpoint unavailable.')

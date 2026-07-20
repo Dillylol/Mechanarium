@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 const SERIES = {
   energy: [
@@ -13,9 +13,17 @@ const SERIES = {
   ],
 }
 
-export default function TelemetryChart({ history, mode = 'energy' }) {
+const DYNAMICS_SERIES = {
+  netTorque: { key: 'netTorque', label: 'Net torque', color: '#f2cf00' },
+  netForce: { key: 'netForce', label: 'Net force', color: '#111111' },
+  angularAcceleration: { key: 'angularAcceleration', label: 'Angular acceleration', color: '#7a3db8' },
+  tensionA: { key: 'tensionA', label: 'Tension A', color: '#009fe3' },
+  tensionB: { key: 'tensionB', label: 'Tension B', color: '#006f9e' },
+}
+
+export default function TelemetryChart({ history, mode = 'energy', dynamicsMetric = 'netTorque' }) {
   const canvasRef = useRef(null)
-  const series = SERIES[mode]
+  const series = useMemo(() => mode === 'dynamics' ? [DYNAMICS_SERIES[dynamicsMetric]] : SERIES[mode], [dynamicsMetric, mode])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -51,12 +59,12 @@ export default function TelemetryChart({ history, mode = 'energy' }) {
       })
       context.stroke()
     }
-  }, [history, mode, series])
+  }, [dynamicsMetric, history, mode, series])
 
   return (
     <div className="chart-wrap">
       <div className="chart-legend" aria-hidden="true">{series.map(({ key, label, color }) => <span key={key} style={{ color }}>{label}</span>)}</div>
-      <canvas ref={canvasRef} className="telemetry-chart" role="img" aria-label={`${mode === 'energy' ? 'Energy' : 'Kinematics'} history chart`} />
+      <canvas ref={canvasRef} className="telemetry-chart" role="img" aria-label={`${mode === 'energy' ? 'Energy' : mode === 'dynamics' ? 'Dynamics' : 'Kinematics'} history chart`} />
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { add, dot, magnitude, normalize, scale, subtract } from './vector.js'
 export function constrainAcceleration(_body, acceleration) { return acceleration }
 
 function supportRadius(body, normal) {
-  if (body.shape === 'circle') return body.radius
+  if (body.shape === 'circle' || body.shape === 'wheel') return body.radius
   if (body.shape === 'beam') {
     const tangent = { x: Math.cos(body.angle), y: Math.sin(body.angle) }
     const beamNormal = { x: -tangent.y, y: tangent.x }
@@ -12,7 +12,7 @@ function supportRadius(body, normal) {
   return Math.abs(normal.x) * body.width / 2 + Math.abs(normal.y) * body.height / 2
 }
 
-function contactWithSurface(body, surface) {
+function contactWithSurface(body, surface, dt) {
   const tangent = { x: Math.cos(surface.angle), y: Math.sin(surface.angle) }
   const normal = { x: -tangent.y, y: tangent.x }
   const topCenter = add(surface.center, scale(normal, surface.thickness / 2))
@@ -31,46 +31,55 @@ function contactWithSurface(body, surface) {
   const friction = Math.min(1, Math.max(0, surface.friction ?? body.friction ?? 0))
   const normalVelocity = velocityNormal < 0 ? -velocityNormal * restitution : velocityNormal
   const normalImpulseSpeed = velocityNormal < 0 ? -(1 + restitution) * velocityNormal : 0
-  const frictionDelta = Math.min(Math.abs(velocityTangent), friction * normalImpulseSpeed)
-  const tangentVelocity = velocityTangent - Math.sign(velocityTangent) * frictionDelta
+  const normalImpulse = body.mass * normalImpulseSpeed
+  let frictionImpulse
+  let tangentVelocity = velocityTangent
+  let angularVelocity = body.angularVelocity
+  if (body.shape === 'wheel') {
+    const inverseInertia = body.rotationMode === 'fixed' ? 0 : 1 / Math.max(body.assemblyInertia ?? body.inertia, 1e-9)
+    const contactSpeed = velocityTangent + body.angularVelocity * body.radius
+    const effectiveInverseMass = 1 / body.mass + body.radius ** 2 * inverseInertia
+    const requiredImpulse = -contactSpeed / effectiveInverseMass
+    const maximumImpulse = friction * normalImpulse
+    frictionImpulse = Math.max(-maximumImpulse, Math.min(maximumImpulse, requiredImpulse))
+    tangentVelocity += frictionImpulse / body.mass
+    angularVelocity = body.rotationMode === 'fixed' ? 0 : body.angularVelocity + frictionImpulse * body.radius * inverseInertia
+  } else {
+    const frictionDelta = Math.min(Math.abs(velocityTangent), friction * normalImpulseSpeed)
+    tangentVelocity = velocityTangent - Math.sign(velocityTangent) * frictionDelta
+    frictionImpulse = -Math.sign(velocityTangent) * frictionDelta * body.mass
+    if (body.shape === 'circle' && friction > 0.05) angularVelocity = tangentVelocity / body.radius
+  }
+  const point = add(body.position, scale(normal, -radius))
+  const contactLoads = [...(body._contactLoads ?? [])]
+  if (normalImpulse > 0) contactLoads.push({ kind: 'normal', sourceId: surface.id ?? 'surface', point, force: scale(normal, normalImpulse / dt) })
+  if (Math.abs(frictionImpulse) > 0) contactLoads.push({ kind: 'friction', sourceId: surface.id ?? 'surface', point, force: scale(tangent, frictionImpulse / dt) })
   return {
     ...body,
     position: add(body.position, scale(normal, penetration)),
     velocity: add(scale(tangent, tangentVelocity), scale(normal, normalVelocity)),
-    angularVelocity: body.shape === 'circle' && friction > 0.05 ? tangentVelocity / body.radius : body.angularVelocity,
+    angularVelocity,
+    _contactLoads: contactLoads,
   }
 }
 
-function applyGround(body, ground) {
-  const radius = supportRadius(body, { x: 0, y: 1 })
-  const penetration = ground.y + radius - body.position.y
-  if (penetration <= 0) return body
-  const restitution = ground.restitution ?? body.restitution
-  const normalImpulseSpeed = body.velocity.y < 0 ? -(1 + restitution) * body.velocity.y : 0
-  const frictionDelta = Math.min(Math.abs(body.velocity.x), (ground.friction ?? 0) * normalImpulseSpeed)
-  return {
-    ...body,
-    position: { ...body.position, y: body.position.y + penetration },
-    velocity: {
-      x: body.velocity.x - Math.sign(body.velocity.x) * frictionDelta,
-      y: body.velocity.y < 0 ? -body.velocity.y * restitution : body.velocity.y,
-    },
-  }
+function applyGround(body, ground, dt) {
+  return contactWithSurface(body, { ...ground, center: { x: body.position.x, y: ground.y }, angle: 0, length: 1e6, thickness: 0 }, dt)
 }
 
-export function applyWorldContacts(body, world) {
+export function applyWorldContacts(body, world, dt = world.fixedStep) {
   let current = body
-  for (const ground of world.constraints.filter((constraint) => constraint.type === 'ground')) current = applyGround(current, ground)
+  for (const ground of world.constraints.filter((constraint) => constraint.type === 'ground')) current = applyGround(current, ground, dt)
   const surfaces = [
     ...world.tracks,
     ...world.bodies.filter((candidate) => candidate.shape === 'beam' && candidate.mode === 'track').map((beam) => ({ ...beam, center: beam.position })),
   ]
-  for (const surface of surfaces) current = contactWithSurface(current, surface)
+  for (const surface of surfaces) current = contactWithSurface(current, surface, dt)
   return current
 }
 
 export function applyConstraints(body, constraints) {
-  return constraints.reduce((current, constraint) => constraint.type === 'ground' ? applyGround(current, constraint) : current, body)
+  return constraints.reduce((current, constraint) => constraint.type === 'ground' ? applyGround(current, constraint, 1 / 120) : current, body)
 }
 
 export function resolveCircleCollisions(bodies) {
@@ -79,7 +88,7 @@ export function resolveCircleCollisions(bodies) {
     for (let rightIndex = leftIndex + 1; rightIndex < next.length; rightIndex += 1) {
       const left = next[leftIndex]
       const right = next[rightIndex]
-      if (left.shape !== 'circle' || right.shape !== 'circle' || left.mode === 'track' || right.mode === 'track') continue
+      if (!['circle', 'wheel'].includes(left.shape) || !['circle', 'wheel'].includes(right.shape) || left.mode === 'track' || right.mode === 'track') continue
       const delta = subtract(right.position, left.position)
       const distance = magnitude(delta)
       const minimumDistance = left.radius + right.radius
@@ -119,7 +128,7 @@ export function resolveBeamBodyCollisions(bodies) {
     const contactOffset = add(scale(tangent, closestLocal.x), scale(beamNormal, closestLocal.y))
     const delta = subtract(relative, contactOffset)
     let distance = magnitude(delta)
-    const radius = body.shape === 'circle' ? body.radius : Math.hypot(body.width, body.height) / 2
+    const radius = ['circle', 'wheel'].includes(body.shape) ? body.radius : Math.hypot(body.width, body.height) / 2
     if (distance >= radius) continue
     let normal
     if (distance > 1e-9) normal = scale(delta, 1 / distance)

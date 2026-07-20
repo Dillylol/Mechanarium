@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, Box, Circle, Crosshair, Gauge, Link2, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
+import { ArrowDown, Box, Circle, CircleDot, Crosshair, Gauge, Link2, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
 
 const elements = [
   { id: 'sphere', label: 'Sphere', icon: Circle },
@@ -9,6 +9,7 @@ const elements = [
   { id: 'spring', label: 'Spring', icon: Waves },
   { id: 'rope', label: 'Rope', icon: Link2 },
   { id: 'beam', label: 'Beam', icon: Minus },
+  { id: 'wheel', label: 'Wheel', icon: CircleDot },
   { id: 'attachment', label: 'Attachment Point', icon: Crosshair },
   { id: 'gravity', label: 'Gravity', icon: ArrowDown },
   { id: 'attractor', label: 'Attractor', icon: Orbit },

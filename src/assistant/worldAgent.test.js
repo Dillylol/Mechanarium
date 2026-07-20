@@ -16,6 +16,10 @@ describe('local world planner', () => {
     expect(planWorldLocally('Add a central force attractor').actions[0]).toMatchObject({ type: 'add_force', target: 'central' })
   })
 
+  it('can explicitly remove the floor constraint', () => {
+    expect(planWorldLocally('Turn off the floor').actions[0]).toMatchObject({ type: 'remove_constraint', target: 'floor' })
+  })
+
   it('asks for a supported construction when intent is unclear', () => {
     expect(planWorldLocally('make it interesting').actions).toHaveLength(0)
   })

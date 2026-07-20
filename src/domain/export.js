@@ -6,7 +6,7 @@ const csvCell = (value) => {
 }
 
 export function telemetryToCsv(history) {
-  const columns = ['time_s', 'body', 'x_m', 'y_m', 'vx_m_s', 'vy_m_s', 'ax_m_s2', 'ay_m_s2', 'speed_m_s', 'angle_rad', 'angular_velocity_rad_s', 'torque_Nm', 'intrinsic_inertia_kg_m2', 'assembly_inertia_kg_m2', 'connector_length_m', 'connector_tension_N', 'connector_extension_m', 'connector_elastic_energy_J', 'kinetic_J', 'potential_J', 'total_energy_J', 'energy_error_percent']
+  const columns = ['time_s', 'body', 'x_m', 'y_m', 'vx_m_s', 'vy_m_s', 'ax_m_s2', 'ay_m_s2', 'speed_m_s', 'angle_rad', 'angular_velocity_rad_s', 'torque_Nm', 'intrinsic_inertia_kg_m2', 'assembly_inertia_kg_m2', 'net_force_x_N', 'net_force_y_N', 'net_force_N', 'net_torque_Nm', 'angular_acceleration_rad_s2', 'tension_a_N', 'tension_b_N', 'axle_reaction_x_N', 'axle_reaction_y_N', 'normal_force_N', 'friction_force_N', 'slip_error_m_s', 'connector_length_m', 'connector_tension_N', 'connector_extension_m', 'connector_elastic_energy_J', 'kinetic_J', 'potential_J', 'total_energy_J', 'energy_error_percent']
   const rows = history.map((sample) => [
     sample.time,
     sample.body,
@@ -22,6 +22,18 @@ export function telemetryToCsv(history) {
     sample.torque,
     sample.inertia,
     sample.assemblyInertia,
+    sample.netForceX,
+    sample.netForceY,
+    sample.netForce,
+    sample.netTorque,
+    sample.angularAcceleration,
+    sample.tensionA,
+    sample.tensionB,
+    sample.axleReactionX,
+    sample.axleReactionY,
+    sample.normalForce,
+    sample.frictionForce,
+    sample.slipError,
     sample.connectorLength,
     sample.connectorTension,
     sample.connectorExtension,

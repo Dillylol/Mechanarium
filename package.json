@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "concurrently --kill-others --names web,agent --prefix-colors black,gray \"npm:dev:web\" \"npm:dev:agent\"",
     "dev:web": "vite",
-    "dev:agent": "node --watch server/agent.mjs",
+    "dev:agent": "node --env-file-if-exists=.env --watch server/agent.mjs",
+    "start:agent": "node --env-file-if-exists=.env server/agent.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",

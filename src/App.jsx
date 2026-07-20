@@ -11,7 +11,7 @@ import { useSimulation } from './hooks/useSimulation.js'
 
 export default function App() {
   const simulation = useSimulation()
-  const [overlays, setOverlays] = useState({ grid: true, vectors: true, trails: false })
+  const [overlays, setOverlays] = useState({ grid: true, net: true, components: true, torque: true, trails: false })
   const [notice, setNotice] = useState('World ready')
   const fileInputRef = useRef(null)
   const presets = listPresets()
@@ -119,6 +119,7 @@ export default function App() {
               snapProposal={simulation.snapProposal}
               dragSnapCandidate={simulation.dragSnapCandidate}
             />
+            {(overlays.net || overlays.components || overlays.torque) && <div className="force-legend" aria-label="Force and torque overlay legend"><span className="net">Net</span><span className="gravity">Gravity</span><span className="tension">Tension</span><span className="reaction">Axle</span><span className="normal">Normal</span><span className="friction">Friction</span><span className="torque">Torque</span></div>}
             {(simulation.snapProposal || simulation.dragSnapCandidate || simulation.connectionPortId || simulation.snapFeedback) && (
               <div className={`snap-confirmation${simulation.snapProposal ? ' pending' : simulation.dragSnapCandidate ? ' acquired' : simulation.connectionPortId ? ' armed' : ' confirmed'}`} role={simulation.snapProposal ? 'dialog' : 'status'} aria-label={simulation.snapProposal ? 'Snap placement' : undefined} aria-live="polite">
                 <div className="snap-indicator" aria-hidden="true">{simulation.snapProposal ? '◎' : simulation.dragSnapCandidate ? '↳' : simulation.connectionPortId ? '1' : '✓'}</div>
@@ -129,7 +130,7 @@ export default function App() {
                 {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
               </div>
             )}
-            <AgentDock scenario={simulation.scenario} world={world} notebook={simulation.notebook} onApply={simulation.applyActions} />
+            <AgentDock scenario={simulation.scenario} world={world} selectedBody={selectedBody} notebook={simulation.notebook} onApply={simulation.applyActions} />
           </div>
         </section>
 
@@ -139,6 +140,8 @@ export default function App() {
           selectedBody={selectedBody}
           selectedEntity={selectedEntity}
           connectorState={simulation.selectedConnectorState}
+          loadState={simulation.selectedLoadState}
+          eligibleWheels={simulation.eligibleWheels}
           connectionPortId={simulation.connectionPortId}
           history={simulation.history}
           recordingStatus={simulation.recordingStatus}
@@ -154,6 +157,7 @@ export default function App() {
           onUpdateBody={updateBody}
           onUpdateTrack={simulation.updateTrack}
           onUpdateConnector={simulation.updateConnector}
+          onRouteConnector={simulation.routeConnector}
           onUpdateInstrument={simulation.updateInstrument}
           onUpdatePort={simulation.updatePort}
           onPinToWorld={simulation.pinPortToWorld}

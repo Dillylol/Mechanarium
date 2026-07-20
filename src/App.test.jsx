@@ -62,6 +62,18 @@ describe('Mechanarium assembly studio', () => {
     expect(screen.getByRole('spinbutton', { name: 'Maximum length (m)' })).toBeInTheDocument()
   })
 
+  it('builds a configurable wheel and exposes dynamics instrumentation', async () => {
+    const user = userEvent.setup(); render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add Wheel' }))
+    expect(screen.getByRole('heading', { name: 'Wheel' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Inertia distribution' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Rotation' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Live wheel dynamics')).toHaveTextContent('Στ')
+    await user.click(screen.getByRole('tab', { name: 'Dynamics' }))
+    expect(screen.getByRole('table', { name: /Force and torque components for Wheel/ })).toBeInTheDocument()
+    for (const name of ['net', 'components', 'torque']) expect(screen.getByRole('checkbox', { name })).toBeChecked()
+  })
+
   it('previews and explicitly confirms structural snaps', async () => {
     const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Add Beam' }))
@@ -112,18 +124,26 @@ describe('Mechanarium assembly studio', () => {
     expect(screen.getByRole('region', { name: 'Assembly constraints' })).toHaveTextContent('Topology valid')
   })
 
-  it('saves Scenario v2 locally', async () => {
+  it('saves Scenario v3 locally', async () => {
     const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Save world locally' }))
-    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"version": 2')
+    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"version": 3')
   })
 
   it('applies a natural-language assembly request through the local fallback', async () => {
     const user = userEvent.setup(); render(<App />)
-    await user.type(screen.getByLabelText('Ask the world-building agent'), 'Add a sphere, beam, rope, and attachment point')
-    await user.click(screen.getByRole('button', { name: 'Send world-building request' }))
+    await user.type(screen.getByLabelText('Ask Vector, the physics agent'), 'Add a sphere, beam, rope, and attachment point')
+    await user.click(screen.getByRole('button', { name: 'Send request to Vector' }))
     expect(await screen.findByText(/Applied 4 world changes/i)).toBeInTheDocument()
     expect(screen.getByText(/Tracks & connectors/)).toBeInTheDocument()
+  })
+
+  it('lets Vector remove the floor without toggling it back on', async () => {
+    const user = userEvent.setup(); render(<App />)
+    expect(screen.getByRole('button', { name: 'Turn Floor Off' })).toBeEnabled()
+    await user.type(screen.getByLabelText('Ask Vector, the physics agent'), 'Turn off the floor')
+    await user.click(screen.getByRole('button', { name: 'Send request to Vector' }))
+    expect(await screen.findByRole('button', { name: 'Turn Floor On' })).toBeEnabled()
   })
 
   it('builds a measurement-only lab and records a reviewable 120 Hz trial', async () => {

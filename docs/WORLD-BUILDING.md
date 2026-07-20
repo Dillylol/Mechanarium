@@ -6,7 +6,7 @@ Mechanarium renders a three-dimensional workspace while solving mechanics in the
 
 Construction and simulation share one workspace. Pause before changing topology. Every structural edit resets time and telemetry; Run locks fields, gizmos, connector handles, deletion, and port operations.
 
-- Add spheres, blocks, ramps, springs, ropes, beams, or attachment points from **Build**.
+- Add spheres, blocks, ramps, springs, ropes, beams, wheels, or attachment points from **Build**.
 - Drag bodies or track centers. Select a ramp or beam to reveal yellow angle and length handles and a green start marker.
 - Hold Shift while dragging the angle handle for 15Â° snapping.
 - Use arrow keys to translate, brackets to rotate, minus/equals to resize, D to disconnect a selected connector, and Delete to remove.
@@ -39,6 +39,12 @@ Beam modes are:
 - **Track** â€” immovable solid segment; dynamic gravity and inertia are inactive.
 
 Auto-length spans a beam between two connected end ports during paused editing and preserves that length when Run begins.
+
+## Wheels and Atwood machines
+
+Wheels expose an axle port and four rim ports. Pin the axle to world or an immovable part for a pulley, or leave the wheel free to roll on a track. Choose a disk or hoop mass distribution and Free or Fixed rotation in the inspector. To build an Atwood machine, attach one rope endpoint to each mass, select the rope, and choose the mounted wheel under **Pulley route**. Routed ropes remain taut and wrap over the wheel’s upper groove.
+
+The scene offers separate Net, Components, and Torque overlays. Selecting a wheel shows gravity, rope tensions, axle reaction, normal force, friction, and resultant torque at their physical application points. The Dynamics tab reports the same solver-authoritative values numerically and exports them to CSV.
 
 Straight track segments are the current scope. Loops and spline tracks will reuse the same port schema in a later milestone.
 

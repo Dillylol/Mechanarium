@@ -6,7 +6,11 @@ Physics fixtures cover 120 Hz stepping, master/per-body gravity, spring period a
 
 Domain fixtures cover Scenario v1-to-v2 migration, v2 round trip, invalid beam/port/joint graphs, deterministic default ports, custom-port preservation, preset isolation, world-agent actions, and assembly-aware SI CSV export.
 
+Vector fixtures cover selected-body context, bounded follow-up history, request limits, action/target compatibility, and exact entity/port validation at the server boundary.
+
 Measurement fixtures cover ruler components, exact and reverse-direction gate crossings, interpolated timestamps, finite-aperture misses, body targeting, debounce, paired-gate calculations, seeded uncertainty, additive Scenario v2 instrument round trips, 120 Hz trial acquisition, notebook persistence, and normalized notebook exports. They also prove instruments never enter port or joint graphs.
+
+Wheel fixtures cover v2-to-v3 migration, disk/hoop inertia, ideal and rotating Atwood analytic acceleration, equal and unequal leg tensions, axle reactions, torque balance, no-slip kinematics, friction-limited rolling, overlay controls, Dynamics UI, and force/torque CSV columns.
 
 Testing Library fixtures cover the 3D studio, body gravity overrides, ramp center/angle/length editing, start placement, beam/rope/custom-port construction, all four SHM labs, paused edit locks, time reset after edits, stepping, accessible assembly diagnostics, local v2 saving, and natural-language assembly requests.
 
@@ -29,7 +33,7 @@ The laboratory interface fixture adds a ruler and two gates, arms a trial, drive
 Run on 2026-07-19:
 
 - lint: passed;
-- automated tests: 59 passed across 11 files;
+- automated tests: 71 passed across 13 files;
 - production build: passed;
 - 60-second numerical soak: passed with finite state and bounded energy error.
 

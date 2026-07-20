@@ -2,9 +2,11 @@ import { INTEGRATORS } from '../physics/constants.js'
 import { isFiniteVector } from '../physics/vector.js'
 import { createInstrument, validateInstrument } from './instruments.js'
 
-export const SCENARIO_VERSION = 2
-export const BODY_SHAPES = Object.freeze(['circle', 'box', 'beam'])
+export const SCENARIO_VERSION = 3
+export const BODY_SHAPES = Object.freeze(['circle', 'box', 'beam', 'wheel'])
 export const BEAM_MODES = Object.freeze(['dynamic', 'pinned', 'track'])
+export const WHEEL_INERTIA_MODELS = Object.freeze(['disk', 'hoop'])
+export const WHEEL_ROTATION_MODES = Object.freeze(['free', 'fixed'])
 export const FORCE_TYPES = Object.freeze(['uniform', 'drag', 'central'])
 export const CONSTRAINT_TYPES = Object.freeze(['ground'])
 export const CONNECTOR_TYPES = Object.freeze(['spring', 'rope'])
@@ -15,6 +17,7 @@ const finiteNonNegative = (value) => Number.isFinite(value) && value >= 0
 const copy = (value) => structuredClone(value)
 
 export const beamInertia = (mass, length) => mass * length ** 2 / 12
+export const wheelInertia = (mass, radius, model = 'disk') => (model === 'hoop' ? 1 : 0.5) * mass * radius ** 2
 
 export function createBody(overrides = {}) {
   const id = overrides.id ?? `body-${crypto.randomUUID()}`
@@ -22,14 +25,17 @@ export function createBody(overrides = {}) {
   const mass = overrides.mass ?? 1
   const shape = overrides.shape ?? 'circle'
   const length = overrides.length ?? 3
+  const inertiaModel = shape === 'wheel' ? (overrides.inertiaModel ?? 'disk') : undefined
   const inertia = shape === 'beam'
     ? beamInertia(mass, length)
+    : shape === 'wheel'
+      ? wheelInertia(mass, radius, inertiaModel)
     : shape === 'box'
       ? mass * ((overrides.width ?? radius * 2) ** 2 + (overrides.height ?? radius * 2) ** 2) / 12
       : 0.5 * mass * radius ** 2
   return {
     id,
-    name: overrides.name ?? (shape === 'beam' ? 'Beam' : 'Body'),
+    name: overrides.name ?? (shape === 'beam' ? 'Beam' : shape === 'wheel' ? 'Wheel' : 'Body'),
     shape,
     mass,
     radius,
@@ -37,7 +43,10 @@ export function createBody(overrides = {}) {
     height: overrides.height ?? radius * 2,
     length,
     thickness: overrides.thickness ?? 0.18,
+    depth: shape === 'wheel' ? (overrides.depth ?? Math.max(0.24, radius * 0.7)) : undefined,
     mode: shape === 'beam' ? (overrides.mode ?? 'dynamic') : undefined,
+    inertiaModel,
+    rotationMode: shape === 'wheel' ? (overrides.rotationMode ?? 'free') : undefined,
     autoLength: shape === 'beam' ? (overrides.autoLength ?? false) : undefined,
     pinPortId: shape === 'beam' ? (overrides.pinPortId ?? `${id}:center`) : undefined,
     position: overrides.position ?? { x: 0, y: 2 },
@@ -50,11 +59,15 @@ export function createBody(overrides = {}) {
     assemblyInertia: overrides.assemblyInertia ?? inertia,
     restitution: overrides.restitution ?? 0.35,
     friction: overrides.friction ?? 0.18,
-    color: overrides.color ?? (shape === 'beam' ? '#171717' : '#ffb35c'),
+    color: overrides.color ?? (shape === 'beam' ? '#171717' : shape === 'wheel' ? '#3b82f6' : '#ffb35c'),
     locked: overrides.locked ?? false,
     gravityEnabled: overrides.gravityEnabled ?? true,
     gravityMultiplier: overrides.gravityMultiplier ?? 1,
   }
+}
+
+export function createWheel(overrides = {}) {
+  return createBody({ shape: 'wheel', name: 'Wheel', mass: 2, radius: 0.65, ...overrides })
 }
 
 export function createTrack(overrides = {}) {
@@ -84,6 +97,7 @@ export function createConnector(type = 'spring', overrides = {}) {
     restLength: overrides.restLength ?? length,
     stiffness: overrides.stiffness ?? 8,
     damping: overrides.damping ?? 0.08,
+    route: type === 'rope' ? overrides.route : undefined,
   }
 }
 
@@ -97,6 +111,13 @@ export function defaultPorts(owner) {
     { id: `${owner.id}:start`, ownerId: owner.id, name: 'Start', kind: 'track', localPosition: { x: -owner.length / 2, y: owner.thickness / 2 } },
     { id: `${owner.id}:center`, ownerId: owner.id, name: 'Center', kind: 'track', localPosition: { x: 0, y: owner.thickness / 2 } },
     { id: `${owner.id}:end`, ownerId: owner.id, name: 'End', kind: 'track', localPosition: { x: owner.length / 2, y: owner.thickness / 2 } },
+  ]
+  if (owner.shape === 'wheel') return [
+    { id: `${owner.id}:center`, ownerId: owner.id, name: 'Axle', kind: 'structural', localPosition: { x: 0, y: 0 } },
+    { id: `${owner.id}:north`, ownerId: owner.id, name: 'North rim', kind: 'connector', localPosition: { x: 0, y: owner.radius } },
+    { id: `${owner.id}:east`, ownerId: owner.id, name: 'East rim', kind: 'connector', localPosition: { x: owner.radius, y: 0 } },
+    { id: `${owner.id}:south`, ownerId: owner.id, name: 'South rim', kind: 'connector', localPosition: { x: 0, y: -owner.radius } },
+    { id: `${owner.id}:west`, ownerId: owner.id, name: 'West rim', kind: 'connector', localPosition: { x: -owner.radius, y: 0 } },
   ]
   const halfWidth = (owner.shape === 'box' ? owner.width : owner.radius * 2) / 2
   const halfHeight = (owner.shape === 'box' ? owner.height : owner.radius * 2) / 2
@@ -160,22 +181,26 @@ function fromLegacyIncline(constraint) {
   })
 }
 
+function normalizeV3(input) {
+  const scenario = copy(input)
+  scenario.version = SCENARIO_VERSION
+  scenario.gravity ??= { g: 9.80665, direction: { x: 0, y: -1 }, enabled: false }
+  scenario.tracks ??= []
+  scenario.ports ??= []
+  scenario.joints ??= []
+  scenario.connectors ??= []
+  scenario.instruments ??= []
+  scenario.forces ??= []
+  scenario.constraints ??= []
+  scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
+  scenario.connectors = scenario.connectors.map((connector) => createConnector(connector.type, connector))
+  scenario.instruments = scenario.instruments.map((instrument) => createInstrument(instrument.type, instrument))
+  return scenario
+}
+
 export function migrateScenario(input) {
   if (!input || typeof input !== 'object') return input
-  if (input.version === SCENARIO_VERSION) {
-    const scenario = copy(input)
-    scenario.gravity ??= { g: 9.80665, direction: { x: 0, y: -1 }, enabled: false }
-    scenario.tracks ??= []
-    scenario.ports ??= []
-    scenario.joints ??= []
-    scenario.connectors ??= []
-    scenario.instruments ??= []
-    scenario.forces ??= []
-    scenario.constraints ??= []
-    scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
-    scenario.instruments = scenario.instruments.map((instrument) => createInstrument(instrument.type, instrument))
-    return scenario
-  }
+  if (input.version === SCENARIO_VERSION || input.version === 2) return normalizeV3(input)
   if (input.version !== 1) return copy(input)
 
   const source = copy(input)
@@ -195,9 +220,9 @@ export function migrateScenario(input) {
     stiffness: force.stiffness,
     damping: force.damping,
   }))
-  return {
+  return normalizeV3({
     ...source,
-    version: SCENARIO_VERSION,
+    version: 2,
     gravity: { g: masterGravity?.g ?? 9.80665, direction: { x: 0, y: -1 }, enabled: Boolean(masterGravity) },
     bodies,
     forces: (source.forces ?? []).filter((force) => !['gravity', 'spring'].includes(force.type)),
@@ -207,7 +232,7 @@ export function migrateScenario(input) {
     instruments: [],
     ports: [],
     joints: [],
-  }
+  })
 }
 
 function validateEndpoint(endpoint, ownerIds, portIds, label, errors) {
@@ -242,6 +267,7 @@ export function validateScenario(input) {
     if (!finitePositive(body.radius)) errors.push(`Body ${body.id} radius must be positive.`)
     if (!Number.isFinite(body.gravityMultiplier)) errors.push(`Body ${body.id} gravity multiplier must be finite.`)
     if (body.shape === 'beam' && (!BEAM_MODES.includes(body.mode) || !finitePositive(body.length) || !finitePositive(body.thickness))) errors.push(`Beam ${body.id} has invalid mode or dimensions.`)
+    if (body.shape === 'wheel' && (!WHEEL_INERTIA_MODELS.includes(body.inertiaModel) || !WHEEL_ROTATION_MODES.includes(body.rotationMode) || !finitePositive(body.depth))) errors.push(`Wheel ${body.id} has invalid inertia, rotation mode, or dimensions.`)
   }
   for (const track of scenario.tracks ?? []) {
     if (!track.id || ids.has(track.id)) errors.push(`Track id must be unique: ${track.id ?? 'missing'}.`)
@@ -269,11 +295,19 @@ export function validateScenario(input) {
     if (!CONSTRAINT_TYPES.includes(constraint.type)) errors.push(`Unsupported constraint type: ${constraint.type}.`)
     if (constraint.bodyId && !bodyIds.has(constraint.bodyId)) errors.push(`Constraint references unknown body: ${constraint.bodyId}.`)
   }
+  const routedWheelIds = new Set()
   for (const connector of scenario.connectors ?? []) {
     if (!CONNECTOR_TYPES.includes(connector.type)) errors.push(`Connector ${connector.id} has an unsupported type.`)
     if (!finitePositive(connector.type === 'rope' ? connector.length : connector.restLength)) errors.push(`Connector ${connector.id} requires a positive length.`)
     validateEndpoint(connector.a, physicalOwnerIds, portIds, `Connector ${connector.id}`, errors)
     validateEndpoint(connector.b, physicalOwnerIds, portIds, `Connector ${connector.id}`, errors)
+    if (connector.route !== undefined) {
+      const route = connector.route
+      const wheel = scenario.bodies.find((body) => body.id === route?.wheelId && body.shape === 'wheel')
+      if (connector.type !== 'rope' || route?.type !== 'wheel' || route.wrap !== 'top' || !['left', 'right'].includes(route.aSide) || !wheel) errors.push(`Connector ${connector.id} has an invalid wheel route.`)
+      if (route?.wheelId && routedWheelIds.has(route.wheelId)) errors.push(`Wheel ${route.wheelId} is already used by another routed rope.`)
+      if (route?.wheelId) routedWheelIds.add(route.wheelId)
+    }
   }
   const jointPairs = new Set()
   const jointPortUsage = new Set()

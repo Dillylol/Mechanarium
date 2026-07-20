@@ -11,4 +11,5 @@ As of 2026-07-19, Mechanarium has completed the planar assembly and SHM mileston
 | 4 â€” Planar assembly and SHM | Complete | Scenario v2, owner-mounted ports, KSP-style part pickup and snap acquisition, joints, springs/ropes, solid tracks, four SHM systems, 45 tests |
 | 5 â€” Performance architecture | Deferred | 120 Hz physics/30 Hz UI publication is established; instruments did not reveal a worker/Wasm requirement |
 | 6 â€” Guided inquiry | Complete | Rulers, photogates, 120 Hz acquisition, persistent trial notebooks, comparison plots, exports, and evidence-grounded prompts |
+| Wheel and Atwood extension | Complete | Scenario v3, disk/hoop wheels, routed pulley ropes, ideal/rotating Atwood solvers, rolling contact, and force/torque instrumentation |
 | 7 â€” Release hardening | Not started | Deployment and broad device audit remain future work |

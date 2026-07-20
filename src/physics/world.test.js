@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createBody, createConnector, createTrack } from '../domain/scenario.js'
+import { createBody, createConnector, createTrack, createWheel } from '../domain/scenario.js'
 import { getPreset } from '../domain/presets.js'
-import { connectorState, resolveEndpoint, resolvePort } from './assembly.js'
+import { bodyLoadState, connectorState, resolveEndpoint, resolvePort } from './assembly.js'
 import { createWorld, stepWorld } from './world.js'
 
 function run(world, seconds) {
@@ -76,6 +76,54 @@ describe('Scenario v2 mechanics world', () => {
     }
     expect(connectorState(world, world.connectors[0]).length).toBeLessThanOrEqual(2.000001)
     expect(maximumTension).toBeGreaterThan(0)
+  })
+
+  it('matches ideal Atwood acceleration, equal tensions, and a stationary pulley', () => {
+    const scenario = getPreset('ideal-atwood')
+    const world = run(createWorld(scenario), 0.5)
+    const massB = world.bodies.find((body) => body.id === 'ideal-mass-b')
+    const wheel = world.bodies.find((body) => body.id === 'ideal-wheel')
+    const state = connectorState(world, world.connectors[0])
+    const expected = scenario.gravity.g * (2 - 1) / (2 + 1)
+    expect(-massB.velocity.y / 0.5).toBeCloseTo(expected, 3)
+    expect(state.tensionA).toBeCloseTo(state.tensionB, 6)
+    expect(wheel.angle).toBe(0)
+    expect(bodyLoadState(world, wheel.id).components.some((component) => component.kind === 'axle-reaction')).toBe(true)
+  })
+
+  it('couples rotating Atwood tensions, torque, and wheel angular acceleration', () => {
+    const scenario = getPreset('rotating-atwood')
+    const world = run(createWorld(scenario), 0.5)
+    const massB = world.bodies.find((body) => body.id === 'rotating-mass-b')
+    const wheel = world.bodies.find((body) => body.id === 'rotating-wheel')
+    const state = connectorState(world, world.connectors[0])
+    const expected = scenario.gravity.g / (3 + wheel.inertia / wheel.radius ** 2)
+    const loads = bodyLoadState(world, wheel.id)
+    expect(-massB.velocity.y / 0.5).toBeCloseTo(expected, 3)
+    expect(state.tensionB).toBeGreaterThan(state.tensionA)
+    expect(Math.abs(massB.velocity.y)).toBeCloseTo(Math.abs(wheel.angularVelocity) * wheel.radius, 4)
+    expect(loads.netTorque).toBeCloseTo((state.tensionA - state.tensionB) * wheel.radius, 4)
+    expect(loads.netTorque).toBeCloseTo(wheel.inertia * wheel.angularAcceleration, 3)
+  })
+
+  it('uses disk and hoop inertia in friction-limited rolling contact', () => {
+    const angle = -Math.PI / 9
+    const tangent = { x: Math.cos(angle), y: Math.sin(angle) }
+    const normal = { x: -tangent.y, y: tangent.x }
+    const speeds = {}
+    for (const model of ['disk', 'hoop']) {
+      const scenario = getPreset('projectile-motion')
+      scenario.constraints = []
+      scenario.tracks = [createTrack({ id: 'wheel-track', center: { x: 0, y: 0 }, angle, length: 8, thickness: 0.2, friction: 1, restitution: 0 })]
+      scenario.bodies = [createWheel({ id: `wheel-${model}`, mass: 2, radius: 0.5, inertiaModel: model, position: { x: -2 * tangent.x + 0.6 * normal.x, y: -2 * tangent.y + 0.6 * normal.y } })]
+      const world = run(createWorld(scenario), 1)
+      const wheel = world.bodies[0]
+      speeds[model] = wheel.velocity.x * tangent.x + wheel.velocity.y * tangent.y
+      const coefficient = model === 'disk' ? 0.5 : 1
+      expect(speeds[model]).toBeCloseTo(scenario.gravity.g * Math.sin(-angle) / (1 + coefficient), 2)
+      expect(bodyLoadState(world, wheel.id).slipError).toBeLessThan(1e-6)
+    }
+    expect(speeds.disk).toBeGreaterThan(speeds.hoop)
   })
 
   it('matches the small-angle massless-rope pendulum period', () => {

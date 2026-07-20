@@ -27,7 +27,8 @@ describe('telemetry export', () => {
       energyError: 0.1,
     }])
     expect(csv).toContain('time_s,body,x_m,y_m,vx_m_s,vy_m_s,ax_m_s2,ay_m_s2,speed_m_s')
-    expect(csv).toContain('angle_rad,angular_velocity_rad_s,torque_Nm,intrinsic_inertia_kg_m2,assembly_inertia_kg_m2,connector_length_m,connector_tension_N')
+    expect(csv).toContain('angle_rad,angular_velocity_rad_s,torque_Nm,intrinsic_inertia_kg_m2,assembly_inertia_kg_m2,net_force_x_N')
+    expect(csv).toContain('tension_a_N,tension_b_N,axle_reaction_x_N')
     expect(csv).toContain('1,"Cart, A",2,3,1.5,-2,0,-9.80665,4')
   })
 })

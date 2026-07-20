@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { INTEGRATORS } from '../physics/constants.js'
-import { allPorts, beamInertia, createBody, deserializeScenario, fitAutoLengthBeams, migrateScenario, serializeScenario, validateScenario } from './scenario.js'
+import { allPorts, beamInertia, createBody, createConnector, createWheel, deserializeScenario, fitAutoLengthBeams, migrateScenario, serializeScenario, validateScenario, wheelInertia } from './scenario.js'
 import { getPreset } from './presets.js'
 import { createInstrument } from './instruments.js'
 
-describe('Scenario v2 contract', () => {
+describe('Scenario v3 contract', () => {
   it('defaults instruments additively and preserves them without creating ports', () => {
     const source = getPreset('projectile-motion')
     expect(source.instruments).toEqual([])
@@ -30,7 +30,7 @@ describe('Scenario v2 contract', () => {
       constraints: [{ id: 'r', type: 'incline', start: { x: -2, y: 0 }, end: { x: 2, y: 2 } }],
     }
     const migrated = migrateScenario(legacy)
-    expect(migrated.version).toBe(2)
+    expect(migrated.version).toBe(3)
     expect(migrated.gravity).toMatchObject({ enabled: true, g: 9.81 })
     expect(migrated.bodies[0]).toMatchObject({ gravityEnabled: true, gravityMultiplier: 1 })
     expect(migrated.tracks[0]).toMatchObject({ id: 'r', type: 'segment' })
@@ -58,6 +58,23 @@ describe('Scenario v2 contract', () => {
 
   it('uses the uniform-beam inertia formula', () => {
     expect(beamInertia(3, 4)).toBe(4)
+  })
+
+  it('derives disk and hoop wheel inertia and axle/rim ports', () => {
+    expect(wheelInertia(2, 0.5, 'disk')).toBeCloseTo(0.25, 10)
+    expect(wheelInertia(2, 0.5, 'hoop')).toBeCloseTo(0.5, 10)
+    const scenario = getPreset('projectile-motion')
+    scenario.bodies.push(createWheel({ id: 'wheel', mass: 2, radius: 0.5, inertiaModel: 'hoop' }))
+    expect(allPorts(scenario).filter((port) => port.ownerId === 'wheel').map((port) => port.id)).toEqual(['wheel:center', 'wheel:north', 'wheel:east', 'wheel:south', 'wheel:west'])
+  })
+
+  it('migrates v2 and rejects two routed ropes sharing one wheel', () => {
+    const source = getPreset('rotating-atwood')
+    source.version = 2
+    expect(migrateScenario(source).version).toBe(3)
+    source.version = 3
+    source.connectors.push(createConnector('rope', { id: 'second-rope', a: source.connectors[0].a, b: source.connectors[0].b, route: { ...source.connectors[0].route } }))
+    expect(validateScenario(source).errors.join(' ')).toMatch(/already used/i)
   })
 
   it('auto-fits a beam between two connected end targets while editing', () => {

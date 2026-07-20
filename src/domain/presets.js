@@ -1,5 +1,5 @@
 import { INTEGRATORS } from '../physics/constants.js'
-import { cloneScenario, createBody, createConnector, createTrack, migrateScenario, SCENARIO_VERSION } from './scenario.js'
+import { cloneScenario, createBody, createConnector, createTrack, createWheel, migrateScenario, SCENARIO_VERSION } from './scenario.js'
 
 const common = {
   version: 1,
@@ -126,6 +126,44 @@ const presets = [
       { id: 'compound-weld', type: 'rigid', a: { type: 'port', ownerId: 'compound-beam', portId: 'compound-beam:end' }, b: { type: 'port', ownerId: 'compound-mass', portId: 'compound-mass:center' } },
     ],
     tracks: [], ports: [], connectors: [], forces: [], constraints: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    duration: 5,
+    id: 'ideal-atwood',
+    name: 'Ideal Atwood Machine',
+    category: 'Pulley Systems',
+    description: 'Two masses share a taut rope over a fixed ideal pulley.',
+    lesson: 'An ideal pulley contributes no rotational inertia, so both rope legs carry equal tension.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [
+      createBody({ id: 'ideal-mass-a', name: 'Mass A', shape: 'box', mass: 1, radius: 0.25, width: 0.5, height: 0.5, position: { x: -0.65, y: 1.5 }, color: '#f2cf00' }),
+      createBody({ id: 'ideal-mass-b', name: 'Mass B', shape: 'box', mass: 2, radius: 0.25, width: 0.5, height: 0.5, position: { x: 0.65, y: 1.5 }, color: '#ff7fa6' }),
+      createWheel({ id: 'ideal-wheel', name: 'Ideal fixed pulley', mass: 2, radius: 0.65, position: { x: 0, y: 4 }, rotationMode: 'fixed', gravityEnabled: false }),
+    ],
+    connectors: [createConnector('rope', { id: 'ideal-rope', name: 'Atwood rope', a: { type: 'port', ownerId: 'ideal-mass-a', portId: 'ideal-mass-a:center' }, b: { type: 'port', ownerId: 'ideal-mass-b', portId: 'ideal-mass-b:center' }, route: { type: 'wheel', wheelId: 'ideal-wheel', wrap: 'top', aSide: 'left' } })],
+    joints: [{ id: 'ideal-axle', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'ideal-wheel', portId: 'ideal-wheel:center' } }],
+    tracks: [], ports: [], forces: [], constraints: [], instruments: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    duration: 5,
+    id: 'rotating-atwood',
+    name: 'Rotating-Pulley Atwood Machine',
+    category: 'Pulley Systems',
+    description: 'A massive disk pulley couples unequal rope tensions to angular acceleration.',
+    lesson: 'Pulley inertia lowers the masses’ acceleration and requires a tension difference to create torque.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [
+      createBody({ id: 'rotating-mass-a', name: 'Mass A', shape: 'box', mass: 1, radius: 0.25, width: 0.5, height: 0.5, position: { x: -0.65, y: 1.5 }, color: '#f2cf00' }),
+      createBody({ id: 'rotating-mass-b', name: 'Mass B', shape: 'box', mass: 2, radius: 0.25, width: 0.5, height: 0.5, position: { x: 0.65, y: 1.5 }, color: '#ff7fa6' }),
+      createWheel({ id: 'rotating-wheel', name: 'Massive disk pulley', mass: 2, radius: 0.65, position: { x: 0, y: 4 }, rotationMode: 'free', inertiaModel: 'disk', gravityEnabled: false }),
+    ],
+    connectors: [createConnector('rope', { id: 'rotating-rope', name: 'Atwood rope', a: { type: 'port', ownerId: 'rotating-mass-a', portId: 'rotating-mass-a:center' }, b: { type: 'port', ownerId: 'rotating-mass-b', portId: 'rotating-mass-b:center' }, route: { type: 'wheel', wheelId: 'rotating-wheel', wrap: 'top', aSide: 'left' } })],
+    joints: [{ id: 'rotating-axle', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'rotating-wheel', portId: 'rotating-wheel:center' } }],
+    tracks: [], ports: [], forces: [], constraints: [], instruments: [],
   },
 ]
 

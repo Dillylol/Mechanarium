@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { connectorLoads, resolveEndpoint } from '../physics/assembly.js'
-import { netWorldForce } from '../physics/forces.js'
+import { bodyLoadState, resolveEndpoint, wheelRouteGeometry } from '../physics/assembly.js'
 
 function disposeObject(object) {
   object.traverse((child) => {
@@ -17,6 +16,80 @@ function bodyGeometry(body) {
   if (body.shape === 'box') return new THREE.BoxGeometry(body.width, body.height, body.width)
   if (/cylinder|roller/i.test(body.name)) return new THREE.CylinderGeometry(body.radius, body.radius, Math.max(0.45, body.radius * 1.4), 32)
   return new THREE.SphereGeometry(body.radius, 32, 20)
+}
+
+function createBodyObject(body) {
+  if (body.shape !== 'wheel') {
+    const mesh = new THREE.Mesh(bodyGeometry(body), new THREE.MeshStandardMaterial({ color: body.color, roughness: 0.46, metalness: 0.04 }))
+    mesh.userData.bodySurface = true
+    return mesh
+  }
+  const group = new THREE.Group()
+  const material = new THREE.MeshStandardMaterial({ color: body.color, roughness: 0.38, metalness: 0.1 })
+  const geometry = body.inertiaModel === 'hoop'
+    ? new THREE.TorusGeometry(body.radius * 0.82, body.radius * 0.18, 18, 48)
+    : new THREE.CylinderGeometry(body.radius, body.radius, body.depth, 48)
+  if (body.inertiaModel === 'disk') geometry.rotateX(Math.PI / 2)
+  const wheel = new THREE.Mesh(geometry, material)
+  wheel.userData.bodySurface = true
+  wheel.castShadow = true
+  wheel.receiveShadow = true
+  const hubGeometry = new THREE.CylinderGeometry(body.radius * 0.12, body.radius * 0.12, body.depth * 1.15, 24)
+  hubGeometry.rotateX(Math.PI / 2)
+  const hub = new THREE.Mesh(hubGeometry, new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 }))
+  const marker = new THREE.Mesh(new THREE.BoxGeometry(body.radius * 0.68, Math.max(0.04, body.radius * 0.07), body.depth * 1.2), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
+  marker.position.x = body.radius * 0.34
+  group.add(wheel, hub, marker)
+  return group
+}
+
+function styleBodyObject(object, body, selected) {
+  object.traverse((child) => {
+    child.userData.bodyId = body.id
+    if (!child.userData.bodySurface) return
+    child.material.color.set(body.color)
+    child.material.emissive?.set(selected ? 0x2d2d2d : 0x000000)
+  })
+}
+
+const LOAD_COLORS = {
+  gravity: 0xb32727,
+  'tension-a': 0x009fe3,
+  'tension-b': 0x009fe3,
+  tension: 0x009fe3,
+  'axle-reaction': 0x7a3db8,
+  normal: 0x00a965,
+  friction: 0xf08c00,
+  net: 0x111111,
+}
+
+function forceArrow(force, origin, color) {
+  const magnitudeValue = Math.hypot(force.x, force.y)
+  if (magnitudeValue < 0.01) return null
+  const arrow = new THREE.ArrowHelper(new THREE.Vector3(force.x / magnitudeValue, force.y / magnitudeValue, 0), new THREE.Vector3(origin.x, origin.y, 0.34), Math.min(3.2, 0.42 + Math.log1p(magnitudeValue) * 0.42), color, 0.22, 0.13)
+  arrow.userData.forceOverlay = true
+  return arrow
+}
+
+function torqueArrow(body, torque) {
+  if (Math.abs(torque) < 0.005) return null
+  const group = new THREE.Group()
+  const sign = Math.sign(torque)
+  const radius = Math.max(body.radius ?? 0.4, 0.35) * 1.32
+  const start = sign > 0 ? 0.2 : Math.PI - 0.2
+  const sweep = Math.PI * 1.35 * sign
+  const points = Array.from({ length: 28 }, (_, index) => {
+    const angle = start + sweep * index / 27
+    return new THREE.Vector3(body.position.x + Math.cos(angle) * radius, body.position.y + Math.sin(angle) * radius, 0.42)
+  })
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0xf2cf00 })))
+  const endAngle = start + sweep
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 16), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
+  head.position.copy(points.at(-1))
+  head.rotation.z = endAngle + (sign > 0 ? Math.PI / 2 : -Math.PI / 2)
+  group.add(head)
+  group.userData.forceOverlay = true
+  return group
 }
 
 function addTransformGizmos(group, entity, center) {
@@ -60,7 +133,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     running,
     selectedId,
     tracks: world.tracks,
-    connectors: world.connectors.map((connector) => ({ id: connector.id, name: connector.name, type: connector.type, a: connector.a, b: connector.b, length: connector.length, restLength: connector.restLength, stiffness: connector.stiffness, damping: connector.damping })),
+    connectors: world.connectors.map((connector) => ({ id: connector.id, name: connector.name, type: connector.type, a: connector.a, b: connector.b, length: connector.length, restLength: connector.restLength, stiffness: connector.stiffness, damping: connector.damping, route: connector.route })),
     forces: world.forces,
     instruments: world.instruments,
     ports: world.ports,
@@ -166,7 +239,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
 
     const pointerDown = (event) => {
       setPointer(event)
-      const hits = raycaster.intersectObjects([...bodiesRef.current.values(), ...constraintsRef.current.children, ...forceArtifactsRef.current.children], false)
+      const hits = raycaster.intersectObjects([...bodiesRef.current.values(), ...constraintsRef.current.children, ...forceArtifactsRef.current.children], true)
       const bodyId = hits[0]?.object?.userData?.bodyId
       const constraintId = hits[0]?.object?.userData?.constraintId ?? hits[0]?.object?.userData?.entityId
       const connectorId = hits[0]?.object?.userData?.connectorId
@@ -344,10 +417,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     for (const body of world.bodies) {
       let mesh = bodiesRef.current.get(body.id)
       if (!mesh) {
-        mesh = new THREE.Mesh(
-          bodyGeometry(body),
-          new THREE.MeshStandardMaterial({ color: body.color, roughness: 0.46, metalness: 0.04 }),
-        )
+        mesh = createBodyObject(body)
         mesh.userData.bodyId = body.id
         mesh.castShadow = true
         mesh.receiveShadow = true
@@ -357,48 +427,52 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         scene.add(mesh)
         bodiesRef.current.set(body.id, mesh)
       }
+      const geometryKey = body.shape === 'wheel' ? `${body.inertiaModel}:${body.radius}:${body.depth}` : body.shape === 'beam' ? `${body.length}:${body.thickness}` : `${body.shape}:${body.radius}:${body.width}:${body.height}`
+      if (mesh.userData.geometryKey && mesh.userData.geometryKey !== geometryKey) {
+        scene.remove(mesh)
+        disposeObject(mesh)
+        mesh = createBodyObject(body)
+        mesh.userData.bodyId = body.id
+        mesh.userData.targetPosition = new THREE.Vector3(body.position.x, body.position.y, 0)
+        mesh.userData.targetAngle = body.angle
+        scene.add(mesh)
+        bodiesRef.current.set(body.id, mesh)
+      }
+      mesh.userData.geometryKey = geometryKey
       mesh.userData.targetPosition.set(body.position.x, body.position.y, 0)
       mesh.userData.targetAngle = body.angle
-      if (body.shape === 'beam' && mesh.userData.length !== body.length) {
-        mesh.geometry.dispose()
-        mesh.geometry = bodyGeometry(body)
-        mesh.userData.length = body.length
-      }
       if (!running) mesh.position.copy(mesh.userData.targetPosition)
-      if (/cylinder|roller/i.test(body.name)) mesh.rotation.x = Math.PI / 2
+      if (body.shape !== 'wheel' && /cylinder|roller/i.test(body.name)) mesh.rotation.x = Math.PI / 2
       if (!running) mesh.rotation.z = body.angle
-      mesh.material.color.set(body.color)
-      mesh.material.emissive.set(body.id === selectedId ? 0x2d2d2d : 0x000000)
+      styleBodyObject(mesh, body, body.id === selectedId)
     }
 
-    for (const [id, arrow] of arrowsRef.current) {
-      if (!present.has(id) || !overlays.vectors) {
-        scene.remove(arrow)
-        disposeObject(arrow)
-        arrowsRef.current.delete(id)
+    const desiredOverlays = new Map()
+    if (overlays.net) for (const body of world.bodies) {
+      const state = bodyLoadState(world, body.id)
+      const arrow = forceArrow(state.netForce, body.position, LOAD_COLORS.net)
+      if (arrow) desiredOverlays.set(`net:${body.id}`, arrow)
+    }
+    const selected = world.bodies.find((body) => body.id === selectedId)
+    if (selected && overlays.components) {
+      const state = bodyLoadState(world, selected.id)
+      for (const component of state.components) {
+        const arrow = forceArrow(component.force, component.point, LOAD_COLORS[component.kind] ?? 0x009d5b)
+        if (arrow) desiredOverlays.set(`component:${component.id}`, arrow)
       }
     }
-
-    if (overlays.vectors) {
-      const loads = connectorLoads(world)
-      for (const body of world.bodies) {
-        const force = netWorldForce(world, body, loads.get(body.id)?.force)
-        const magnitude = Math.hypot(force.x, force.y)
-        let arrow = arrowsRef.current.get(body.id)
-        if (magnitude < 0.01) {
-          if (arrow) arrow.visible = false
-          continue
-        }
-        if (!arrow) {
-          arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0x009d5b, 0.24, 0.14)
-          scene.add(arrow)
-          arrowsRef.current.set(body.id, arrow)
-        }
-        arrow.visible = true
-        arrow.position.copy(bodiesRef.current.get(body.id).position)
-        arrow.setDirection(new THREE.Vector3(force.x / magnitude, force.y / magnitude, 0))
-        arrow.setLength(Math.min(3.4, 0.75 + Math.log1p(magnitude) * 0.55), 0.24, 0.14)
-      }
+    if (selected?.shape === 'wheel' && overlays.torque) {
+      const arrow = torqueArrow(selected, bodyLoadState(world, selected.id).netTorque)
+      if (arrow) desiredOverlays.set(`torque:${selected.id}`, arrow)
+    }
+    for (const [key, current] of arrowsRef.current) {
+      scene.remove(current)
+      disposeObject(current)
+      arrowsRef.current.delete(key)
+    }
+    for (const [key, overlay] of desiredOverlays) {
+      scene.add(overlay)
+      arrowsRef.current.set(key, overlay)
     }
 
     if (!trailRef.current) {
@@ -417,7 +491,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     trail.geometry.setDrawRange(0, samples.length)
     trail.visible = samples.length > 1
     if (trail.visible) trail.geometry.computeBoundingSphere()
-  }, [history, overlays.trails, overlays.vectors, running, selectedId, world])
+  }, [history, overlays.components, overlays.net, overlays.torque, overlays.trails, running, selectedId, world])
 
   useEffect(() => {
     const renderWorld = worldStateRef.current
@@ -455,7 +529,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     for (const force of renderWorld.connectors) {
       if (force.type === 'spring' || force.type === 'rope') {
         const geometry = new THREE.BufferGeometry()
-        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3))
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((force.route ? 32 : 2) * 3), 3))
         const spring = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: force.type === 'rope' ? 0x555555 : 0x111111, linewidth: 2 }))
         spring.frustumCulled = false
         spring.userData.connectorId = force.id
@@ -540,8 +614,10 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       const b = resolveEndpoint(world, force.b)
       if (!spring || !a || !b) continue
       const positions = spring.geometry.getAttribute('position')
-      positions.setXYZ(0, a.position.x, a.position.y, 0)
-      positions.setXYZ(1, b.position.x, b.position.y, 0)
+      const route = wheelRouteGeometry(world, force, 28)
+      const points = route?.points ?? [a.position, b.position]
+      points.forEach((point, index) => positions.setXYZ(index, point.x, point.y, 0))
+      spring.geometry.setDrawRange(0, points.length)
       positions.needsUpdate = true
       spring.geometry.computeBoundingSphere()
       for (const [key, endpoint] of [['a', a], ['b', b]]) {

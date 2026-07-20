@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { beamInertia, createBody, createConnector, createTrack, fitAutoLengthBeams, validateScenario } from '../domain/scenario.js'
+import { beamInertia, createBody, createConnector, createTrack, createWheel, fitAutoLengthBeams, validateScenario, wheelInertia } from '../domain/scenario.js'
 import { createInstrument, deriveGateResults, detectPhotogateCrossings, sampleTrialWorld } from '../domain/instruments.js'
 import { getPreset } from '../domain/presets.js'
 import { createFixedStepClock } from '../physics/clock.js'
-import { connectorState, resolveEndpoint, resolvePort } from '../physics/assembly.js'
+import { bodyLoadState, connectorState, resolveEndpoint, resolvePort, wheelCenterMount } from '../physics/assembly.js'
 import { magnitude } from '../physics/vector.js'
 import { createWorld, stepWorld, worldToScenario } from '../physics/world.js'
 
@@ -79,7 +79,11 @@ function findBodySnapCandidate(world, bodyId, position, radius) {
 function sampleWorld(world, bodyId) {
   const body = world.bodies.find((candidate) => candidate.id === bodyId) ?? world.bodies[0]
   if (!body) return null
-  const connector = world.connectors[0] ? connectorState(world, world.connectors[0]) : null
+  const routedConnector = world.connectors.find((candidate) => candidate.route?.wheelId === body.id)
+  const connector = routedConnector ? connectorState(world, routedConnector) : world.connectors[0] ? connectorState(world, world.connectors[0]) : null
+  const loads = bodyLoadState(world, body.id)
+  const componentMagnitude = (kind) => (loads.components ?? []).filter((component) => component.kind === kind).reduce((sum, component) => sum + Math.hypot(component.force.x, component.force.y), 0)
+  const axle = (loads.components ?? []).find((component) => component.kind === 'axle-reaction')?.force ?? { x: 0, y: 0 }
   return {
     time: world.time, body: body.name, bodyId: body.id,
     x: body.position.x, y: body.position.y,
@@ -87,7 +91,18 @@ function sampleWorld(world, bodyId) {
     ax: body.acceleration.x, ay: body.acceleration.y,
     speed: magnitude(body.velocity),
     angle: body.angle, angularVelocity: body.angularVelocity,
-    torque: (body.angularAcceleration ?? 0) * (body.assemblyInertia ?? body.inertia),
+    torque: loads.netTorque,
+    netTorque: loads.netTorque,
+    netForce: loads.forceMagnitude,
+    netForceX: loads.netForce.x,
+    netForceY: loads.netForce.y,
+    slipError: loads.slipError ?? 0,
+    tensionA: loads.tensionA ?? connector?.tensionA ?? '',
+    tensionB: loads.tensionB ?? connector?.tensionB ?? '',
+    axleReactionX: axle.x,
+    axleReactionY: axle.y,
+    normalForce: componentMagnitude('normal'),
+    frictionForce: componentMagnitude('friction'),
     inertia: body.inertia,
     assemblyInertia: body.assemblyInertia ?? body.inertia,
     connectorLength: connector?.length ?? '', connectorTension: connector?.tension ?? '', connectorExtension: connector?.extension ?? '', connectorElasticEnergy: connector?.elasticEnergy ?? '',
@@ -288,6 +303,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         if (body.id !== bodyId) return body
         const next = { ...body, ...changes }
         if (body.shape === 'beam' && ('length' in changes || 'mass' in changes)) next.inertia = beamInertia(next.mass, next.length)
+        if (body.shape === 'wheel' && ('radius' in changes || 'mass' in changes || 'inertiaModel' in changes)) next.inertia = wheelInertia(next.mass, next.radius, next.inertiaModel)
+        if (body.shape === 'wheel' && changes.rotationMode === 'fixed') next.angularVelocity = 0
         return next
       })
       const body = scenario.bodies.find((candidate) => candidate.id === bodyId)
@@ -342,6 +359,21 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     commitScenarioEdit((scenario) => { scenario.connectors = scenario.connectors.map((connector) => connector.id === connectorId ? { ...connector, ...changes } : connector) })
     setSelectedId(connectorId)
   }, [commitScenarioEdit])
+
+  const routeConnector = useCallback((connectorId, wheelId) => {
+    const connector = worldRef.current.connectors.find((candidate) => candidate.id === connectorId && candidate.type === 'rope')
+    if (!connector) return
+    if (!wheelId) {
+      updateConnector(connectorId, { route: undefined })
+      return
+    }
+    const wheel = worldRef.current.bodies.find((body) => body.id === wheelId && body.shape === 'wheel')
+    const a = resolveEndpoint(worldRef.current, connector.a)
+    const b = resolveEndpoint(worldRef.current, connector.b)
+    if (!wheel || !a || !b) return
+    const aSide = a.position.x <= wheel.position.x ? 'left' : 'right'
+    updateConnector(connectorId, { route: { type: 'wheel', wheelId, wrap: 'top', aSide } })
+  }, [updateConnector])
 
   const moveConnectorEndpoint = useCallback((connectorId, key, position) => {
     updateConnector(connectorId, { [key]: { type: 'world', position } })
@@ -463,7 +495,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     commitScenarioEdit((scenario) => {
       scenario.bodies = scenario.bodies.filter((body) => body.id !== id)
       scenario.tracks = scenario.tracks.filter((track) => track.id !== id)
-      scenario.connectors = scenario.connectors.filter((connector) => connector.id !== id && connector.a.ownerId !== id && connector.b.ownerId !== id && connector.a.portId !== id && connector.b.portId !== id)
+      scenario.connectors = scenario.connectors
+        .filter((connector) => connector.id !== id && connector.a.ownerId !== id && connector.b.ownerId !== id && connector.a.portId !== id && connector.b.portId !== id)
+        .map((connector) => connector.route?.wheelId === id ? { ...connector, route: undefined } : connector)
       scenario.ports = scenario.ports.filter((port) => port.ownerId !== id && port.id !== id)
       scenario.joints = scenario.joints.filter((joint) => joint.id !== id && joint.a.ownerId !== id && joint.b.ownerId !== id && joint.a.portId !== id && joint.b.portId !== id)
       scenario.forces = scenario.forces.filter((force) => force.bodyId !== id)
@@ -479,6 +513,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         scenario.bodies.push(createBody({ id, name: isBox ? 'Block' : 'Sphere', shape: target === 'box' ? 'box' : 'circle', radius: isBox ? 0.55 : 0.42, width: 1.1, height: 1.1, position: { x: 0, y: 2.5 }, color: isBox ? '#111111' : '#f2cf00' }))
       } else if (target === 'beam') {
         scenario.bodies.push(createBody({ id, name: 'Beam', shape: 'beam', mode: 'dynamic', mass: 1.5, length: 3.5, position: { x: 0, y: 2.5 } }))
+      } else if (target === 'wheel') {
+        scenario.bodies.push(createWheel({ id, position: { x: 0, y: 2.5 } }))
       } else if (target === 'ramp') {
         scenario.tracks.push(createTrack({ id, center: { x: 0, y: 0 }, angle: Math.PI / 9, length: 6 }))
       } else if (target === 'spring' || target === 'rope') {
@@ -565,6 +601,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       if (action.type === 'add_body') addElement(action.target)
       if (action.type === 'add_track' || action.type === 'add_constraint' && action.target === 'ramp') addElement('ramp')
       if (action.type === 'add_beam') addElement('beam')
+      if (action.type === 'add_wheel' || action.type === 'add_body' && action.target === 'wheel') addElement('wheel')
       if (action.type === 'add_connector' || action.type === 'add_force' && ['spring', 'rope'].includes(action.target)) addElement(action.target)
       if (action.type === 'add_port') addElement('attachment')
       if (action.type === 'add_instrument' && ['ruler', 'photogate'].includes(action.target)) addElement(action.target)
@@ -576,7 +613,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         if (!action.entityId || !['a', 'b'].includes(action.endpoint) || !action.otherEntityId || !action.otherPortId) throw new TypeError('A connector action requires an exact connector, endpoint, owner, and port.')
         updateConnector(action.entityId, { [action.endpoint]: { type: 'port', ownerId: action.otherEntityId, portId: action.otherPortId } })
       }
-      if (action.target === 'floor') addElement('floor')
+      if (action.type === 'add_constraint' && action.target === 'floor' && !worldRef.current.constraints.some((constraint) => constraint.type === 'ground')) addElement('floor')
+      if (action.type === 'remove_constraint' && action.target === 'floor') commitScenarioEdit((scenario) => { scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'ground') })
       if (action.target === 'gravity') updateGravity({ enabled: !['remove_force', 'disable_gravity'].includes(action.type), g: action.value ?? worldRef.current.gravity.g })
       if (action.type === 'add_force' && action.target === 'central') addElement('attractor')
     })
@@ -585,16 +623,18 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const selectedBody = useMemo(() => world.bodies.find((body) => body.id === selectedId) ?? world.bodies[0], [selectedId, world.bodies])
   const selectedEntity = useMemo(() => world.bodies.find((item) => item.id === selectedId) ?? world.tracks.find((item) => item.id === selectedId) ?? world.connectors.find((item) => item.id === selectedId) ?? world.ports.find((item) => item.id === selectedId) ?? selectedBody, [selectedBody, selectedId, world.bodies, world.connectors, world.ports, world.tracks])
   const selectedConnectorState = useMemo(() => selectedEntity?.a ? connectorState(world, selectedEntity) : null, [selectedEntity, world])
+  const selectedLoadState = useMemo(() => bodyLoadState(world, selectedBody.id), [selectedBody.id, world])
+  const eligibleWheels = useMemo(() => world.bodies.filter((body) => body.shape === 'wheel' && wheelCenterMount(world, body)?.fixed && !world.connectors.some((connector) => connector.id !== selectedEntity?.id && connector.route?.wheelId === body.id)), [selectedEntity?.id, world])
   const connectionPortLabel = useMemo(() => {
     const port = connectionPortId && world.portIndex.get(connectionPortId)
     return port ? portLabel(world, port) : ''
   }, [connectionPortId, world])
 
   return {
-    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback, dragSnapCandidate,
+    world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedLoadState, eligibleWheels, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback, dragSnapCandidate,
     running, setRunning, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
     recordingStatus, pendingTrial, notebook, armTrial, discardTrial, savePendingTrial, deleteTrial,
-    updateBody, updateTrack, updateConnector, updateInstrument, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
+    updateBody, updateTrack, updateConnector, routeConnector, updateInstrument, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
     addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, alignInstrument, placeBodyAtStart, prepareOrbit,
   }
 }
