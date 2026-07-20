@@ -47,4 +47,19 @@ describe('local world planner', () => {
     expect(plan.message).toContain('48 samples and 1 gate events')
     expect(plan.message).toContain('no paired-gate result yet')
   })
+
+  it('previews an offline roller coaster instead of applying it immediately', () => {
+    const plan = planWorldLocally('Create a rollercoaster')
+    expect(plan.actions).toEqual([])
+    expect(plan.proposal.actions).toEqual([{ type: 'load_preset', target: 'spline-roller-coaster' }])
+  })
+
+  it('scaffolds a pasted problem before offering a worked approach', () => {
+    const first = planWorldLocally('A 2 kg block is launched at 5 m/s. Find its momentum?')
+    expect(first.tutorial.stage).toBe('identify-knowns')
+    expect(first.message).toMatch(/list the known/i)
+    const worked = planWorldLocally('I am stuck, show the worked solution', { telemetry: { tutor: first.tutorial } })
+    expect(worked.tutorial.stage).toBe('worked-solution')
+    expect(worked.message).toMatch(/worked approach/i)
+  })
 })

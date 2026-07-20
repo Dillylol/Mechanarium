@@ -2,39 +2,32 @@
 
 ## Automated layers
 
-Physics fixtures cover 120 Hz stepping, master/per-body gravity, spring period and energy, rope slack/tension and pendulum period, beam and compound inertia, physical-pendulum period, bounded pin error, exact track-top contact, friction/restitution, collisions, central force, and a 60-second compound-assembly soak.
-
-Domain fixtures cover Scenario v1-to-v2 migration, v2 round trip, invalid beam/port/joint graphs, deterministic default ports, custom-port preservation, preset isolation, world-agent actions, and assembly-aware SI CSV export.
-
-Vector fixtures cover selected-body context, bounded follow-up history, request limits, action/target compatibility, and exact entity/port validation at the server boundary.
-
-Measurement fixtures cover ruler components, exact and reverse-direction gate crossings, interpolated timestamps, finite-aperture misses, body targeting, debounce, paired-gate calculations, seeded uncertainty, additive Scenario v2 instrument round trips, 120 Hz trial acquisition, notebook persistence, and normalized notebook exports. They also prove instruments never enter port or joint graphs.
-
-Wheel fixtures cover v2-to-v3 migration, disk/hoop inertia, ideal and rotating Atwood analytic acceleration, equal and unequal leg tensions, axle reactions, torque balance, no-slip kinematics, friction-limited rolling, overlay controls, Dynamics UI, and force/torque CSV columns.
-
-Testing Library fixtures cover the 3D studio, body gravity overrides, ramp center/angle/length editing, start placement, beam/rope/custom-port construction, all four SHM labs, paused edit locks, time reset after edits, stepping, accessible assembly diagnostics, local v2 saving, and natural-language assembly requests.
-
-The laboratory interface fixture adds a ruler and two gates, arms a trial, drives Run/Pause acquisition, reviews it, and saves it. Agent fixtures require measured values with units, current-step awareness, one evidence question, and an explicit statement when paired readings do not exist.
+- Physics fixtures cover the 120 Hz step, integrators, gravity, forces, springs, ropes, collisions, straight contact, friction, pins, rigid assemblies, pendulum/Atwood analytic comparisons, wheel inertia, and a 60-second numerical soak.
+- Spline fixtures verify quintic endpoint position/first/second derivatives, deterministic adaptive sampling, arclength, normals, curvature, validation, straight-spline support, loop completion above threshold, and detachment below threshold.
+- Domain fixtures cover v1/v2/v3-to-v4 migration, spline round trips and ports, invalid graphs, preset isolation, measurement sampling, and Scenario/notebook/telemetry export.
+- Vector fixtures cover bounded requests/history, selected-body context, exact port policy, spline-blueprint rejection, offline coaster proposals, Apply confirmation, evidence grounding, tutoring scaffolds, and worked-solution escalation.
+- Tutorial fixtures verify the onboarding plus four-investigation registry, required learning stages, current-step context, and local persistence.
+- Testing Library fixtures cover the studio, construction, editing locks, trial recording, diagnostics, saving/import contracts, and agent interaction.
 
 ## Browser acceptance checklist
 
-- Load and Run Inclined Spring Oscillator, Massless-Rope Pendulum, Uniform-Beam Pendulum, and Compound Beam Oscillator.
-- Manually add a beam, attachment point, and rope; move a connector endpoint near a highlighted port, verify no connection exists before confirmation, then select **Snap to place**.
-- Move one track endpoint near another and verify the target halo, ghost placement, **Keep free**, and confirmed-placement feedback.
-- Pick up a sphere near a beam and verify that all foreign ports appear green, carried-part ports appear yellow, the closest pair magnetically aligns, and release produces a named rigid-mount proposal.
-- Rotate and resize a ramp/beam with gizmos and verify the body rests on the visible top face.
-- Confirm Run hides/locks structural controls, Pause restores them, and the next edit resets time and telemetry.
-- Leave the compound assembly running for at least 60 seconds and inspect console, interaction responsiveness, and memory behavior.
-- Build an incline experiment, add a ruler and two gates, align them, target a body, and record two trials at different angles.
-- Compare plotted measurements, export notebook JSON/CSV, reload, and confirm saved trials persist while instruments have no physical influence.
+- Open all thirteen prepared experiments and Run the two Atwood, Loop-the-Loop, and Spline Roller Coaster systems.
+- Confirm the above-threshold loop rider passes the top and exits; lower the release knot and confirm physical detachment.
+- Add Loop, Hill, Valley, and Blank Spline tracks. Select each curve, drag a yellow knot and green tangent handle, edit exact derivative fields, insert/delete a knot, reverse support side, and verify Run locks editing.
+- Confirm the visible curve and contact surface coincide at hills, valleys, and the loop. Watch track coordinate, curvature radius, normal force, and CSV output.
+- Align a ruler and photogate to a curved track and verify alignment has no physical influence.
+- Ask Vector to “create a rollercoaster”; confirm the current world remains unchanged until Apply, and Cancel leaves it unchanged.
+- Paste a numeric mechanics problem; verify Vector asks for knowns/unknown before a solution and supplies a worked approach only when requested or told the student is stuck.
+- Complete/restart/skip onboarding and the Projectile, Incline, Atwood, and Loop tutorials; reload and confirm progress persists.
+- Repeat the critical workflow at desktop and mobile widths with keyboard-only navigation and a screen reader.
 
 ## Latest quality gate
 
-Run on 2026-07-19:
+Run on 2026-07-20:
 
 - lint: passed;
-- automated tests: 71 passed across 13 files;
+- automated tests: 87 passed across 17 files;
 - production build: passed;
-- 60-second numerical soak: passed with finite state and bounded energy error.
+- 60-second numerical soak: passed with finite state and bounded error.
 
-The existing Three.js bundle-size advisory remains non-blocking. A later performance milestone will split the render bundle and move physics execution behind the established world boundary.
+The Three.js bundle-size advisory remains non-blocking. Broad browser/mobile/screen-reader and manual visual checks remain release-hardening work; the local in-app browser pass was unavailable because localhost navigation was blocked by the browser security policy.

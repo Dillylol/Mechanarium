@@ -20,4 +20,15 @@ describe('Vector server policy', () => {
     const scenario = getPreset('compound-pendulum')
     expect(() => validateWorldActions([{ type: 'add_joint', target: 'pin', entityId: 'missing', portId: 'missing:center', otherEntityId: 'compound-mass', otherPortId: 'compound-mass:center' }], scenario)).toThrow(/exact ports/i)
   })
+
+  it('accepts finite spline blueprints and rejects degenerate ones', () => {
+    const scenario = getPreset('projectile-motion')
+    const action = { type: 'add_spline_track', target: 'spline', track: { id: 'curve', name: 'Curve', supportSide: 'left', thickness: 0.18, friction: 0.2, restitution: 0, startEnd: 'start', knots: [
+      { id: 'a', position: { x: -2, y: 0 }, tangent: { x: 2, y: 0 }, secondDerivative: { x: 0, y: 0 } },
+      { id: 'b', position: { x: 2, y: 0 }, tangent: { x: 2, y: 0 }, secondDerivative: { x: 0, y: 0 } },
+    ] } }
+    expect(validateWorldActions([action], scenario)).toHaveLength(1)
+    action.track.knots[1].position = { x: -2, y: 0 }
+    expect(() => validateWorldActions([action], scenario)).toThrow(/coincident/i)
+  })
 })

@@ -1,10 +1,15 @@
 import { useState } from 'react'
-import { ArrowDown, Box, Circle, CircleDot, Crosshair, Gauge, Link2, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
+import { ArrowDown, BookOpen, Box, Circle, CircleDot, Crosshair, Gauge, GitBranch, Link2, Minus, Orbit, Ruler, SlidersHorizontal, Sparkles, Triangle, Waves } from 'lucide-react'
+import LearnPanel from './LearnPanel.jsx'
 
 const elements = [
   { id: 'sphere', label: 'Sphere', icon: Circle },
   { id: 'box', label: 'Block', icon: Box },
   { id: 'ramp', label: 'Ramp', icon: Triangle },
+  { id: 'spline', label: 'Spline', icon: GitBranch },
+  { id: 'loop', label: 'Loop', icon: CircleDot },
+  { id: 'hill', label: 'Hill', icon: GitBranch },
+  { id: 'valley', label: 'Valley', icon: GitBranch },
   { id: 'floor', label: 'Floor', icon: Minus },
   { id: 'spring', label: 'Spring', icon: Waves },
   { id: 'rope', label: 'Rope', icon: Link2 },
@@ -20,7 +25,7 @@ const instruments = [
   { id: 'ruler', label: 'Ruler', icon: Ruler },
 ]
 
-export default function BuilderRail({ presets, activePreset, world, onAddElement, onLoadPreset }) {
+export default function BuilderRail({ presets, activePreset, world, tutorials, onAddElement, onLoadPreset }) {
   const [tab, setTab] = useState('build')
   const gravityOn = world.gravity.enabled
   const groundOn = world.constraints.some((constraint) => constraint.type === 'ground')
@@ -29,6 +34,7 @@ export default function BuilderRail({ presets, activePreset, world, onAddElement
       <div className="rail-tabs" role="tablist" aria-label="World builder sections">
         <button type="button" role="tab" aria-selected={tab === 'build'} onClick={() => setTab('build')}><SlidersHorizontal size={15} />Build</button>
         <button type="button" role="tab" aria-selected={tab === 'labs'} onClick={() => setTab('labs')}><Sparkles size={15} />Labs</button>
+        <button type="button" role="tab" aria-selected={tab === 'learn'} onClick={() => setTab('learn')}><BookOpen size={15} />Learn</button>
       </div>
 
       {tab === 'build' ? (
@@ -48,7 +54,7 @@ export default function BuilderRail({ presets, activePreset, world, onAddElement
           </div>
           <div className="builder-note"><strong>Assembly mode</strong><p>Pick up a part to reveal every compatible green mount. Yellow source nodes magnetically align nearby; release, then confirm Snap to place. Run locks the topology.</p></div>
         </div>
-      ) : (
+      ) : tab === 'labs' ? (
         <div className="rail-content">
           <div className="panel-intro"><p className="micro-label">Prepared systems</p><h1 id="builder-title">Experiments</h1><p>Start with a known phenomenon, then alter its assumptions.</p></div>
           <nav className="experiment-list" aria-label="Prepared physics experiments">
@@ -59,7 +65,7 @@ export default function BuilderRail({ presets, activePreset, world, onAddElement
             ))}
           </nav>
         </div>
-      )}
+      ) : <div className="rail-content"><LearnPanel tutorials={tutorials} onLoadPreset={onLoadPreset} /></div>}
     </aside>
   )
 }

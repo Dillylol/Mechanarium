@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { INTEGRATORS } from '../physics/constants.js'
-import { allPorts, beamInertia, createBody, createConnector, createWheel, deserializeScenario, fitAutoLengthBeams, migrateScenario, serializeScenario, validateScenario, wheelInertia } from './scenario.js'
+import { allPorts, beamInertia, createBody, createConnector, createSplineTrack, createWheel, deserializeScenario, fitAutoLengthBeams, migrateScenario, serializeScenario, validateScenario, wheelInertia } from './scenario.js'
 import { getPreset } from './presets.js'
 import { createInstrument } from './instruments.js'
 
-describe('Scenario v3 contract', () => {
+describe('Scenario v4 contract', () => {
   it('defaults instruments additively and preserves them without creating ports', () => {
     const source = getPreset('projectile-motion')
     expect(source.instruments).toEqual([])
@@ -30,7 +30,7 @@ describe('Scenario v3 contract', () => {
       constraints: [{ id: 'r', type: 'incline', start: { x: -2, y: 0 }, end: { x: 2, y: 2 } }],
     }
     const migrated = migrateScenario(legacy)
-    expect(migrated.version).toBe(3)
+    expect(migrated.version).toBe(4)
     expect(migrated.gravity).toMatchObject({ enabled: true, g: 9.81 })
     expect(migrated.bodies[0]).toMatchObject({ gravityEnabled: true, gravityMultiplier: 1 })
     expect(migrated.tracks[0]).toMatchObject({ id: 'r', type: 'segment' })
@@ -71,10 +71,22 @@ describe('Scenario v3 contract', () => {
   it('migrates v2 and rejects two routed ropes sharing one wheel', () => {
     const source = getPreset('rotating-atwood')
     source.version = 2
-    expect(migrateScenario(source).version).toBe(3)
+    expect(migrateScenario(source).version).toBe(4)
     source.version = 3
     source.connectors.push(createConnector('rope', { id: 'second-rope', a: source.connectors[0].a, b: source.connectors[0].b, route: { ...source.connectors[0].route } }))
     expect(validateScenario(source).errors.join(' ')).toMatch(/already used/i)
+  })
+
+  it('migrates v3 and round-trips spline tracks with world-space ports', () => {
+    const legacy = getPreset('rolling-incline')
+    legacy.version = 3
+    expect(migrateScenario(legacy).version).toBe(4)
+    const scenario = getPreset('projectile-motion')
+    scenario.tracks = [createSplineTrack({ id: 'curve', template: 'hill' })]
+    const restored = deserializeScenario(serializeScenario(scenario))
+    expect(restored.tracks[0]).toMatchObject({ id: 'curve', type: 'spline', supportSide: 'left' })
+    expect(allPorts(restored).filter((port) => port.ownerId === 'curve')).toHaveLength(3)
+    expect(validateScenario(restored).valid).toBe(true)
   })
 
   it('auto-fits a beam between two connected end targets while editing', () => {

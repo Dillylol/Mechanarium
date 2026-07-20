@@ -166,5 +166,8 @@ export function sampleTrialWorld(world) {
     ax: body.acceleration.x,
     ay: body.acceleration.y,
     speed: Math.hypot(body.velocity.x, body.velocity.y),
+    trackCoordinate: body._trackContact?.distance ?? '',
+    trackCurvature: body._trackContact?.curvature ?? '',
+    trackRadius: body._trackContact?.curvature ? Math.abs(1 / body._trackContact.curvature) : '',
   }))
 }

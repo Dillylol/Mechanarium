@@ -5,6 +5,8 @@ Vector has two execution paths:
 - a deterministic local planner that works on static GitHub Pages without credentials;
 - an OpenAI-backed agent served by `POST /api/agent` with the API key held only on the server.
 
+Both modes consume Scenario v4. Small validated actions may apply immediately; preset replacement, custom spline geometry, and multi-part requests are returned as previews that require Apply or Cancel. The server validates every spline blueprint to the same 2–64-knot, finite-vector contract used by the client.
+
 The browser endpoint is configured at build time with `VITE_AGENT_API_URL`. If it is empty, the client uses the same-origin `/api/agent` path and falls back to the local planner when that request is unavailable.
 
 ## Local development

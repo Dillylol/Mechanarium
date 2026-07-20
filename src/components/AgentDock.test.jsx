@@ -36,4 +36,19 @@ describe('Vector agent dock', () => {
       { role: 'assistant', content: 'First response' },
     ])
   })
+
+  it('requires confirmation before applying a roller coaster proposal', async () => {
+    const scenario = getPreset('projectile-motion')
+    const world = createWorld(scenario)
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<AgentDock scenario={scenario} world={world} selectedBody={world.bodies[0]} notebook={{ trials: [] }} onApply={onApply} />)
+    await user.type(screen.getByLabelText('Ask Vector, the physics agent'), 'Create a rollercoaster')
+    await user.click(screen.getByRole('button', { name: 'Send request to Vector' }))
+    expect(await screen.findByRole('dialog', { name: 'Vector world proposal' })).toBeInTheDocument()
+    expect(onApply).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith([{ type: 'load_preset', target: 'spline-roller-coaster' }])
+  })
 })

@@ -1,5 +1,7 @@
 # **Architectural Guide and Development Roadmap for Mechanarium: A High-Performance, Socratic Mechanics Engine and Accessible Physics Sandbox**
 
+> **Document status:** Aspirational research and architecture proposal. It is not a statement of the current implementation. The shipped simulator uses a measured JavaScript main-thread engine; Rust/Wasm, Web Workers, OffscreenCanvas, SharedArrayBuffer, symbolic regression, full 3D joints, and compound pulleys remain deferred. Current capabilities are recorded in `README.md` and `docs/STATUS.md`.
+
 This report presents a complete systems architecture, physical modeling framework, and engineering roadmap to evolve the baseline physicsThing prototype into **Mechanarium**, a performant, visually transparent mechanics engine and interactive physics sandbox.1 The proposed architecture aligns directly with the curriculum demands of AP Physics 1, AP Physics C: Mechanics, and first-year university-level classical mechanics.2 It replaces high-level, single-threaded web bottlenecks with native WebAssembly, OffscreenCanvas Web Workers, and low-level rendering interfaces.5 Additionally, it replaces the preliminary K-Nearest Neighbors (KNN) model with an agentic Socratic laboratory assistant and custom symbolic regression engine.1
 
 ## **Pedagogical Alignment and Mechanics Curriculum Modeling**

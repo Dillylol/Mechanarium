@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { bodyLoadState, resolveEndpoint, wheelRouteGeometry } from '../physics/assembly.js'
+import { sampleSpline } from '../domain/spline.js'
 
 function disposeObject(object) {
   object.traverse((child) => {
@@ -109,6 +110,25 @@ function addTransformGizmos(group, entity, center) {
   start.position.set(center.x - tangent.x * entity.length / 2, center.y - tangent.y * entity.length / 2 + 0.35, 0.16)
   start.userData = { entityId: entity.id }
   group.add(start)
+}
+
+function addSplineGizmos(group, track) {
+  for (const knot of track.knots) {
+    const knotHandle = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 10), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
+    knotHandle.position.set(knot.position.x, knot.position.y, 0.22)
+    knotHandle.userData = { entityId: track.id, id: track.id, gizmo: 'spline-knot', knotId: knot.id, center: knot.position }
+    group.add(knotHandle)
+    const tangentPosition = { x: knot.position.x + knot.tangent.x * 0.28, y: knot.position.y + knot.tangent.y * 0.28 }
+    const guide = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(knot.position.x, knot.position.y, 0.18),
+      new THREE.Vector3(tangentPosition.x, tangentPosition.y, 0.18),
+    ]), new THREE.LineBasicMaterial({ color: 0xf2cf00, transparent: true, opacity: 0.65 }))
+    group.add(guide)
+    const tangentHandle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
+    tangentHandle.position.set(tangentPosition.x, tangentPosition.y, 0.22)
+    tangentHandle.userData = { entityId: track.id, id: track.id, gizmo: 'spline-tangent', knotId: knot.id, center: knot.position }
+    group.add(tangentHandle)
+  }
 }
 
 export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal, dragSnapCandidate }) {
@@ -312,6 +332,16 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         }
         if (draggingEndpoint) handlersRef.current.onMoveConnectorEndpoint(draggingEndpoint.connectorId, draggingEndpoint.endpoint, { x: intersection.x, y: intersection.y })
         if (draggingGizmo) {
+          if (draggingGizmo.gizmo === 'spline-knot') {
+            const track = worldStateRef.current.tracks.find((candidate) => candidate.id === draggingGizmo.id)
+            if (track?.type === 'spline') handlersRef.current.onTransform(track.id, { knots: track.knots.map((knot) => knot.id === draggingGizmo.knotId ? { ...knot, position: { x: intersection.x, y: intersection.y } } : knot) })
+            return
+          }
+          if (draggingGizmo.gizmo === 'spline-tangent') {
+            const track = worldStateRef.current.tracks.find((candidate) => candidate.id === draggingGizmo.id)
+            if (track?.type === 'spline') handlersRef.current.onTransform(track.id, { knots: track.knots.map((knot) => knot.id === draggingGizmo.knotId ? { ...knot, tangent: { x: (intersection.x - knot.position.x) / 0.28, y: (intersection.y - knot.position.y) / 0.28 } } : knot) })
+            return
+          }
           const dx = intersection.x - draggingGizmo.center.x
           const dy = intersection.y - draggingGizmo.center.y
           if (draggingGizmo.gizmo === 'angle') {
@@ -505,6 +535,28 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     endpointHandlesRef.current.clear()
 
     for (const constraint of renderWorld.tracks) {
+      if (constraint.type === 'spline') {
+        const samples = constraint._samples ?? sampleSpline(constraint)
+        for (let index = 1; index < samples.length; index += 1) {
+          const a = samples[index - 1]
+          const b = samples[index]
+          const dx = b.position.x - a.position.x
+          const dy = b.position.y - a.position.y
+          const length = Math.hypot(dx, dy)
+          if (length < 1e-9) continue
+          const normal = { x: (a.normal.x + b.normal.x) / 2, y: (a.normal.y + b.normal.y) / 2 }
+          const normalLength = Math.hypot(normal.x, normal.y) || 1
+          normal.x /= normalLength; normal.y /= normalLength
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(length + 0.012, constraint.thickness, 1.35), new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 0.75, emissive: constraint.id === selectedId ? 0x252525 : 0x000000 }))
+          rail.position.set((a.position.x + b.position.x) / 2 - normal.x * constraint.thickness / 2, (a.position.y + b.position.y) / 2 - normal.y * constraint.thickness / 2, 0)
+          rail.rotation.z = Math.atan2(dy, dx)
+          rail.receiveShadow = true
+          rail.userData.constraintId = constraint.id
+          group.add(rail)
+        }
+        if (constraint.id === selectedId && !running) addSplineGizmos(group, constraint)
+        continue
+      }
         const ramp = new THREE.Mesh(new THREE.BoxGeometry(constraint.length, constraint.thickness, 1.35), new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 0.75, emissive: constraint.id === selectedId ? 0x252525 : 0x000000 }))
         ramp.position.set(constraint.center.x, constraint.center.y, 0)
         ramp.rotation.z = constraint.angle
@@ -638,7 +690,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     if (event.code === 'Space') { event.preventDefault(); onToggle(); return }
     if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); onDelete(); return }
     if ((event.key === 'd' || event.key === 'D') && !running) { event.preventDefault(); onDisconnect(); return }
-    const transformable = world.tracks.find((item) => item.id === selectedId) ?? world.bodies.find((item) => item.id === selectedId && item.shape === 'beam')
+    const transformable = world.tracks.find((item) => item.id === selectedId && item.type === 'segment') ?? world.bodies.find((item) => item.id === selectedId && item.shape === 'beam')
     if (transformable && !running && ['[', ']', '-', '='].includes(event.key)) {
       event.preventDefault()
       if (event.key === '[' || event.key === ']') onTransform(selectedId, { angle: transformable.angle + (event.key === '[' ? -1 : 1) * Math.PI / 36 })

@@ -8,6 +8,7 @@ import { downloadText, notebookJson, notebookToCsv, scenarioJson, telemetryToCsv
 import { listPresets } from './domain/presets.js'
 import { deserializeScenario } from './domain/scenario.js'
 import { useSimulation } from './hooks/useSimulation.js'
+import { useTutorials } from './hooks/useTutorials.js'
 
 export default function App() {
   const simulation = useSimulation()
@@ -16,11 +17,13 @@ export default function App() {
   const fileInputRef = useRef(null)
   const presets = listPresets()
   const { world, selectedBody, selectedEntity } = simulation
+  const tutorials = useTutorials({ world, notebook: simulation.notebook, history: simulation.history })
 
   const updateBody = (changes) => simulation.updateBody(selectedBody.id, changes)
   const moveBody = (bodyId, position, snapRadius) => simulation.moveAssemblyPart(bodyId, position, snapRadius)
   const nudgeSelected = (dx, dy) => {
     if (selectedEntity.type === 'segment') simulation.updateTrack(selectedEntity.id, { center: { x: selectedEntity.center.x + dx, y: selectedEntity.center.y + dy } })
+    else if (selectedEntity.type === 'spline') simulation.updateTrack(selectedEntity.id, { knots: selectedEntity.knots.map((knot) => ({ ...knot, position: { x: knot.position.x + dx, y: knot.position.y + dy } })) })
     else if (selectedEntity.position) simulation.updateBody(selectedEntity.id, { position: { x: selectedEntity.position.x + dx, y: selectedEntity.position.y + dy } })
   }
 
@@ -84,7 +87,7 @@ export default function App() {
       </header>
 
       <main className="studio-layout">
-        <BuilderRail presets={presets} activePreset={world.scenarioId} world={world} onAddElement={simulation.addElement} onLoadPreset={simulation.loadPreset} />
+        <BuilderRail presets={presets} activePreset={world.scenarioId} world={world} tutorials={tutorials} onAddElement={simulation.addElement} onLoadPreset={simulation.loadPreset} />
 
         <section id="world" className="world-stage" aria-labelledby="world-title">
           <div className="stage-bar">
@@ -130,7 +133,7 @@ export default function App() {
                 {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
               </div>
             )}
-            <AgentDock scenario={simulation.scenario} world={world} selectedBody={selectedBody} notebook={simulation.notebook} onApply={simulation.applyActions} />
+            <AgentDock scenario={simulation.scenario} world={world} selectedBody={selectedBody} notebook={simulation.notebook} tutorialContext={tutorials.context} onApply={simulation.applyActions} />
           </div>
         </section>
 

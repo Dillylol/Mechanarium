@@ -1,4 +1,5 @@
-import { Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
 
 export function NumberField({ label, value, unit, min, max, step = 0.1, onChange }) {
   const displayedValue = String(Number((Number(value) || 0).toFixed(4)))
@@ -10,10 +11,50 @@ export function NumberField({ label, value, unit, min, max, step = 0.1, onChange
   return <label className="number-field"><span>{label}</span><span className="input-with-unit"><input type="number" aria-label={`${label} (${unit})`} key={displayedValue} defaultValue={displayedValue} min={min} max={max} step={step} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} /><small>{unit}</small></span></label>
 }
 
+function SplineFields({ track, onUpdate }) {
+  const [selectedKnotId, setSelectedKnotId] = useState(track.knots[0]?.id)
+  const selected = track.knots.find((knot) => knot.id === selectedKnotId) ?? track.knots[0]
+  const updateKnot = (changes) => onUpdate({ knots: track.knots.map((knot) => knot.id === selected.id ? { ...knot, ...changes } : knot) })
+  const addKnot = () => {
+    if (track.knots.length >= 64) return
+    const a = track.knots.at(-2)
+    const b = track.knots.at(-1)
+    const knot = {
+      id: `knot-${crypto.randomUUID()}`,
+      position: { x: (a.position.x + b.position.x) / 2, y: (a.position.y + b.position.y) / 2 },
+      tangent: { x: (a.tangent.x + b.tangent.x) / 2, y: (a.tangent.y + b.tangent.y) / 2 },
+      secondDerivative: { x: (a.secondDerivative.x + b.secondDerivative.x) / 2, y: (a.secondDerivative.y + b.secondDerivative.y) / 2 },
+    }
+    const knots = [...track.knots.slice(0, -1), knot, b]
+    onUpdate({ knots }); setSelectedKnotId(knot.id)
+  }
+  const removeKnot = () => {
+    if (track.knots.length <= 2) return
+    const index = track.knots.findIndex((knot) => knot.id === selected.id)
+    const knots = track.knots.filter((knot) => knot.id !== selected.id)
+    onUpdate({ knots }); setSelectedKnotId(knots[Math.max(0, index - 1)].id)
+  }
+  return <div className="spline-fields">
+    <div className="rail-section-heading"><span>Spline knots</span><small>{track.knots.length}/64</small></div>
+    <label className="select-field"><span>Selected knot</span><select value={selected.id} onChange={(event) => setSelectedKnotId(event.target.value)}>{track.knots.map((knot, index) => <option value={knot.id} key={knot.id}>{index + 1} · {knot.id}</option>)}</select></label>
+    <div className="field-grid">
+      <NumberField label="Position x" value={selected.position.x} unit="m" onChange={(x) => updateKnot({ position: { ...selected.position, x } })} />
+      <NumberField label="Position y" value={selected.position.y} unit="m" onChange={(y) => updateKnot({ position: { ...selected.position, y } })} />
+      <NumberField label="Tangent x" value={selected.tangent.x} unit="m" onChange={(x) => updateKnot({ tangent: { ...selected.tangent, x } })} />
+      <NumberField label="Tangent y" value={selected.tangent.y} unit="m" onChange={(y) => updateKnot({ tangent: { ...selected.tangent, y } })} />
+      <NumberField label="Curvature x" value={selected.secondDerivative.x} unit="m" onChange={(x) => updateKnot({ secondDerivative: { ...selected.secondDerivative, x } })} />
+      <NumberField label="Curvature y" value={selected.secondDerivative.y} unit="m" onChange={(y) => updateKnot({ secondDerivative: { ...selected.secondDerivative, y } })} />
+    </div>
+    <div className="connection-actions"><button type="button" onClick={addKnot} disabled={track.knots.length >= 64}><Plus size={14} />Insert before end</button><button type="button" onClick={removeKnot} disabled={track.knots.length <= 2}><Trash2 size={14} />Delete knot</button></div>
+    <p className="environment-help">Yellow points move knots; green handles edit tangents. Shared derivatives keep adjacent spans C² continuous.</p>
+  </div>
+}
+
 export default function Inspector({ entity: body, ownerName, onSelectOwner, onUpdate, onRemove, canRemove, running, connectorState, loadState, eligibleWheels = [], onRouteConnector, onPlaceAtStart, onPinToWorld, connectionPortId, onConnectPort }) {
   if (!body) return <p>Select an assembly entity to inspect it.</p>
   const disabledTitle = running ? 'Pause the experiment to edit body properties.' : undefined
-  const isTrack = body.type === 'segment'
+  const isTrack = body.type === 'segment' || body.type === 'spline'
+  const isSpline = body.type === 'spline'
   const isConnector = body.type === 'spring' || body.type === 'rope'
   const isBeam = body.shape === 'beam'
   const isWheel = body.shape === 'wheel'
@@ -42,9 +83,10 @@ export default function Inspector({ entity: body, ownerName, onSelectOwner, onUp
         <div className="field-grid">
           {!isTrack && <NumberField label="Mass" value={body.mass} unit="kg" min={0.05} step={0.05} onChange={(mass) => onUpdate({ mass })} />}
           {!isTrack && !isBeam && <NumberField label="Radius" value={body.radius} unit="m" min={0.1} max={2} step={0.05} onChange={(radius) => onUpdate({ radius })} />}
-          <NumberField label="Center x" value={(body.center ?? body.position).x} unit="m" onChange={(x) => onUpdate(isTrack ? { center: { ...body.center, x } } : { position: { ...body.position, x } })} /><NumberField label="Center y" value={(body.center ?? body.position).y} unit="m" onChange={(y) => onUpdate(isTrack ? { center: { ...body.center, y } } : { position: { ...body.position, y } })} />
-          {(isTrack || isBeam || isWheel) && <NumberField label="Angle" value={body.angle * 180 / Math.PI} unit="deg" step={1} onChange={(degrees) => onUpdate({ angle: degrees * Math.PI / 180 })} />}
-          {(isTrack || isBeam) && <><NumberField label="Length" value={body.length} unit="m" min={0.2} onChange={(length) => onUpdate({ length })} /><NumberField label="Thickness" value={body.thickness} unit="m" min={0.05} onChange={(thickness) => onUpdate({ thickness })} /></>}
+          {!isSpline && <><NumberField label="Center x" value={(body.center ?? body.position).x} unit="m" onChange={(x) => onUpdate(isTrack ? { center: { ...body.center, x } } : { position: { ...body.position, x } })} /><NumberField label="Center y" value={(body.center ?? body.position).y} unit="m" onChange={(y) => onUpdate(isTrack ? { center: { ...body.center, y } } : { position: { ...body.position, y } })} /></>}
+          {(!isSpline && (isTrack || isBeam || isWheel)) && <NumberField label="Angle" value={body.angle * 180 / Math.PI} unit="deg" step={1} onChange={(degrees) => onUpdate({ angle: degrees * Math.PI / 180 })} />}
+          {(!isSpline && (isTrack || isBeam)) && <NumberField label="Length" value={body.length} unit="m" min={0.2} onChange={(length) => onUpdate({ length })} />}
+          {(isTrack || isBeam) && <NumberField label="Thickness" value={body.thickness} unit="m" min={0.05} onChange={(thickness) => onUpdate({ thickness })} />}
           {!isTrack && <><NumberField label="Velocity x" value={body.velocity.x} unit="m/s" onChange={(x) => onUpdate({ velocity: { ...body.velocity, x } })} /><NumberField label="Velocity y" value={body.velocity.y} unit="m/s" onChange={(y) => onUpdate({ velocity: { ...body.velocity, y } })} /></>}
           {isWheel && <><NumberField label="Axial depth" value={body.depth} unit="m" min={0.05} onChange={(depth) => onUpdate({ depth })} /><NumberField label="Angular velocity" value={body.angularVelocity} unit="rad/s" onChange={(angularVelocity) => onUpdate({ angularVelocity })} /></>}
           <NumberField label="Restitution" value={body.restitution} unit="ratio" min={0} max={1} onChange={(restitution) => onUpdate({ restitution })} /><NumberField label="Friction" value={body.friction} unit="ratio" min={0} max={1} onChange={(friction) => onUpdate({ friction })} />
@@ -52,6 +94,7 @@ export default function Inspector({ entity: body, ownerName, onSelectOwner, onUp
         {!isTrack && <div className="toggle-stack"><label className="check-field"><input type="checkbox" checked={body.gravityEnabled} onChange={(event) => onUpdate({ gravityEnabled: event.target.checked })} />Gravity for this object</label><NumberField label="Gravity multiplier" value={body.gravityMultiplier} unit="×" step={0.1} onChange={(gravityMultiplier) => onUpdate({ gravityMultiplier })} /></div>}
         {isBeam && <><label className="select-field"><span>Beam mode</span><select value={body.mode} onChange={(event) => onUpdate({ mode: event.target.value })}><option value="dynamic">Dynamic</option><option value="pinned">Pinned</option><option value="track">Track</option></select></label><label className="check-field"><input type="checkbox" checked={body.autoLength} onChange={(event) => onUpdate({ autoLength: event.target.checked })} />Auto-length between connected ends</label></>}
         {isWheel && <><label className="select-field"><span>Inertia distribution</span><select value={body.inertiaModel} onChange={(event) => onUpdate({ inertiaModel: event.target.value })}><option value="disk">Solid disk · I = ½mR²</option><option value="hoop">Hoop · I = mR²</option></select></label><label className="select-field"><span>Rotation</span><select value={body.rotationMode} onChange={(event) => onUpdate({ rotationMode: event.target.value })}><option value="free">Free rotation</option><option value="fixed">Fixed / ideal pulley</option></select></label></>}
+        {isSpline && <><label className="select-field"><span>Support side</span><select value={body.supportSide} onChange={(event) => onUpdate({ supportSide: event.target.value })}><option value="left">Left of path</option><option value="right">Right of path</option></select></label><SplineFields track={body} onUpdate={onUpdate} /></>}
         {isTrack && <><label className="select-field"><span>Release port</span><select value={body.startEnd} onChange={(event) => onUpdate({ startEnd: event.target.value })}><option value="start">Start</option><option value="end">End</option></select></label><button className="orbit-button" type="button" onClick={onPlaceAtStart}>Place selected body at start</button></>}
       </>}
     </fieldset>

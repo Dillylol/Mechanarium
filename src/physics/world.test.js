@@ -24,7 +24,7 @@ function crossings(scenario, seconds, sample) {
   return { world, times }
 }
 
-describe('Scenario v2 mechanics world', () => {
+describe('planar mechanics world', () => {
   it('keeps custom attachment points mounted through owner translation and rotation', () => {
     const scenario = getPreset('projectile-motion')
     const owner = scenario.bodies[0]

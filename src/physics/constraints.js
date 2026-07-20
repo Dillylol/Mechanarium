@@ -1,4 +1,5 @@
 import { add, dot, magnitude, normalize, scale, subtract } from './vector.js'
+import { sampleSpline } from '../domain/spline.js'
 
 export function constrainAcceleration(_body, acceleration) { return acceleration }
 
@@ -63,6 +64,56 @@ function contactWithSurface(body, surface, dt) {
   }
 }
 
+function splineSurfaceCandidates(body, track) {
+  const samples = track._samples ?? sampleSpline(track)
+  const candidates = []
+  for (let index = 1; index < samples.length; index += 1) {
+    const a = samples[index - 1]
+    const b = samples[index]
+    const delta = subtract(b.position, a.position)
+    const length = magnitude(delta)
+    if (length < 1e-9) continue
+    const tangent = scale(delta, 1 / length)
+    const normal = normalize(add(a.normal, b.normal))
+    const centerline = scale(add(a.position, b.position), 0.5)
+    const center = subtract(centerline, scale(normal, track.thickness / 2))
+    const relative = subtract(body.position, centerline)
+    const along = dot(relative, tangent)
+    const radius = supportRadius(body, normal)
+    const signedDistance = dot(relative, normal)
+    if (Math.abs(along) > length / 2 + radius * 0.35 || signedDistance < -track.thickness - radius * 0.6 || signedDistance > radius * 1.75) continue
+    const priorIndex = body._trackContact?.trackId === track.id ? body._trackContact.sampleIndex : null
+    const continuityPenalty = priorIndex === null ? 0 : Math.min(Math.abs(index - priorIndex), 20) * 0.04
+    candidates.push({
+      score: Math.abs(radius - signedDistance) + continuityPenalty,
+      index,
+      surface: { ...track, center, angle: Math.atan2(tangent.y, tangent.x), length, id: track.id },
+      contact: {
+        trackId: track.id,
+        sampleIndex: index,
+        distance: a.distance + length / 2,
+        tangent,
+        normal,
+        curvature: (a.curvature + b.curvature) / 2,
+        gap: signedDistance - radius,
+      },
+    })
+  }
+  return candidates.sort((left, right) => left.score - right.score)
+}
+
+function contactWithSpline(body, track, dt) {
+  const candidate = splineSurfaceCandidates(body, track)[0]
+  const alreadyContacted = body._contactLoads?.some((load) => load.sourceId === track.id)
+  if (!candidate) return !alreadyContacted && body._trackContact?.trackId === track.id ? { ...body, _trackContact: null } : body
+  const contacted = contactWithSurface(body, candidate.surface, dt)
+  const changed = contacted !== body
+  if (changed) return { ...contacted, _trackContact: candidate.contact }
+  if (alreadyContacted) return body
+  if (body._trackContact?.trackId === track.id && Math.abs(candidate.contact.gap) < 0.03) return { ...body, _trackContact: candidate.contact }
+  return body._trackContact?.trackId === track.id ? { ...body, _trackContact: null } : body
+}
+
 function applyGround(body, ground, dt) {
   return contactWithSurface(body, { ...ground, center: { x: body.position.x, y: ground.y }, angle: 0, length: 1e6, thickness: 0 }, dt)
 }
@@ -71,10 +122,11 @@ export function applyWorldContacts(body, world, dt = world.fixedStep) {
   let current = body
   for (const ground of world.constraints.filter((constraint) => constraint.type === 'ground')) current = applyGround(current, ground, dt)
   const surfaces = [
-    ...world.tracks,
+    ...world.tracks.filter((track) => track.type === 'segment'),
     ...world.bodies.filter((candidate) => candidate.shape === 'beam' && candidate.mode === 'track').map((beam) => ({ ...beam, center: beam.position })),
   ]
   for (const surface of surfaces) current = contactWithSurface(current, surface, dt)
+  for (const track of world.tracks.filter((candidate) => candidate.type === 'spline')) current = contactWithSpline(current, track, dt)
   return current
 }
 

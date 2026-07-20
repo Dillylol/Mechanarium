@@ -124,10 +124,10 @@ describe('Mechanarium assembly studio', () => {
     expect(screen.getByRole('region', { name: 'Assembly constraints' })).toHaveTextContent('Topology valid')
   })
 
-  it('saves Scenario v3 locally', async () => {
+  it('saves Scenario v4 locally', async () => {
     const user = userEvent.setup(); render(<App />)
     await user.click(screen.getByRole('button', { name: 'Save world locally' }))
-    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"version": 3')
+    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"version": 4')
   })
 
   it('applies a natural-language assembly request through the local fallback', async () => {

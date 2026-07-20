@@ -1,5 +1,6 @@
 import { INTEGRATORS } from '../physics/constants.js'
-import { cloneScenario, createBody, createConnector, createTrack, createWheel, migrateScenario, SCENARIO_VERSION } from './scenario.js'
+import { cloneScenario, createBody, createConnector, createSplineTrack, createTrack, createWheel, migrateScenario, SCENARIO_VERSION } from './scenario.js'
+import { createSplineKnot } from './spline.js'
 
 const common = {
   version: 1,
@@ -164,6 +165,43 @@ const presets = [
     connectors: [createConnector('rope', { id: 'rotating-rope', name: 'Atwood rope', a: { type: 'port', ownerId: 'rotating-mass-a', portId: 'rotating-mass-a:center' }, b: { type: 'port', ownerId: 'rotating-mass-b', portId: 'rotating-mass-b:center' }, route: { type: 'wheel', wheelId: 'rotating-wheel', wrap: 'top', aSide: 'left' } })],
     joints: [{ id: 'rotating-axle', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'rotating-wheel', portId: 'rotating-wheel:center' } }],
     tracks: [], ports: [], forces: [], constraints: [], instruments: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    duration: 12,
+    id: 'loop-the-loop',
+    name: 'Loop-the-Loop',
+    category: 'Energy & Circular Motion',
+    description: 'Test the minimum release height required to maintain contact through a vertical loop.',
+    lesson: 'The object must retain enough speed at the top for the inward net force to supply centripetal acceleration.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [createWheel({ id: 'loop-rider', name: 'Rolling disk', mass: 1, radius: 0.28, position: { x: -5.82, y: 6.55 }, inertiaModel: 'disk', friction: 0.75, restitution: 0, color: '#f2cf00' })],
+    tracks: [createSplineTrack({ id: 'loop-track', name: 'Vertical loop', template: 'loop', friction: 0.8, restitution: 0 })],
+    ports: [], joints: [], connectors: [], forces: [], constraints: [], instruments: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    duration: 16,
+    id: 'spline-roller-coaster',
+    name: 'Spline Roller Coaster',
+    category: 'Energy & Curved Motion',
+    description: 'Explore changing speed, curvature, and normal force across a smooth custom track.',
+    lesson: 'Height controls the energy budget while local curvature controls the normal force required to follow the rail.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [createWheel({ id: 'coaster-car', name: 'Coaster wheel', mass: 1.2, radius: 0.3, position: { x: -6.8, y: 5.7 }, inertiaModel: 'disk', friction: 0.7, restitution: 0, color: '#78e6d5' })],
+    tracks: [createSplineTrack({
+      id: 'coaster-track', name: 'Editable coaster', friction: 0.8, restitution: 0,
+      knots: [
+        createSplineKnot({ id: 'coaster-release', position: { x: -7, y: 5.4 }, tangent: { x: 3.5, y: -2.5 }, secondDerivative: { x: 0, y: 0 } }),
+        createSplineKnot({ id: 'coaster-valley-a', position: { x: -3.5, y: -1.3 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 5 } }),
+        createSplineKnot({ id: 'coaster-hill', position: { x: 0, y: 2.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: -4 } }),
+        createSplineKnot({ id: 'coaster-valley-b', position: { x: 3.3, y: -0.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 4 } }),
+        createSplineKnot({ id: 'coaster-finish', position: { x: 7, y: 1.1 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
+      ],
+    })],
+    ports: [], joints: [], connectors: [], forces: [], constraints: [], instruments: [],
   },
 ]
 

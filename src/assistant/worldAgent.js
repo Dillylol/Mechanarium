@@ -12,6 +12,9 @@ const PRESET_ALIASES = [
   ['static atwood', 'ideal-atwood'],
   ['rotating atwood', 'rotating-atwood'],
   ['atwood machine', 'rotating-atwood'],
+  ['loop', 'loop-the-loop'],
+  ['roller coaster', 'spline-roller-coaster'],
+  ['rollercoaster', 'spline-roller-coaster'],
   ['oscillator', 'spring-oscillator'],
   ['orbit', 'orbital-motion'],
 ]
@@ -21,6 +24,30 @@ export function planWorldLocally(message, context = {}) {
   const actions = []
   const latestTrial = context.telemetry?.lab?.trials?.at(-1)
   const guideStep = context.telemetry?.lab?.guide_step
+
+  if (/roller\s*coaster|coaster/.test(normalized) && /(create|build|make|show|load)/.test(normalized)) {
+    return {
+      message: 'I prepared an editable spline coaster with hills and valleys. Review the proposed world before applying it.',
+      actions: [],
+      proposal: { summary: 'Replace the current world with the editable Spline Roller Coaster experiment.', actions: [{ type: 'load_preset', target: 'spline-roller-coaster' }] },
+      source: 'local',
+    }
+  }
+
+  const asksForSolution = /(worked solution|show.*solution|give.*answer|i'?m stuck|solve it)/.test(normalized)
+  const looksLikeProblem = /(physics problem|given|calculate|find|determine|how (fast|far|long|high)|mass|velocity|acceleration|force|energy|momentum)/.test(normalized) && /\?|find|calculate|determine|given/.test(normalized)
+  if (looksLikeProblem || asksForSolution || context.telemetry?.tutor) {
+    const principle = /momentum|collision/.test(normalized) ? 'conservation of momentum' : /spring|oscillat/.test(normalized) ? 'Hooke’s law and energy conservation' : /loop|circular|radius/.test(normalized) ? 'energy conservation and radial Newton’s second law' : /projectile|launch|range/.test(normalized) ? 'independent horizontal and vertical kinematics' : /atwood|pulley|tension/.test(normalized) ? 'Newton’s second law for each mass and torque for the pulley' : 'a free-body diagram followed by Newton’s second law or energy conservation'
+    const messageText = asksForSolution
+      ? `Worked approach: define the system, draw the interactions, write ${principle}, substitute only the stated values, then check units and limiting behavior. I will not invent missing quantities. Which numerical values should I use?`
+      : `Let’s model this with ${principle}. First, list the known quantities with units and name the single quantity you need to find.`
+    return {
+      message: messageText,
+      actions: [],
+      tutorial: { problemSummary: message.slice(0, 240), knowns: [], unknown: '', principle, stage: asksForSolution ? 'worked-solution' : 'identify-knowns', nextPrompt: asksForSolution ? 'Supply any missing numerical values.' : 'List each known with its unit.' },
+      source: 'local',
+    }
+  }
 
   if (latestTrial && /(data|measure|evidence|result|trial|acceleration|speed|time)/.test(normalized)) {
     const result = latestTrial.gate_results?.at(-1)
@@ -69,6 +96,12 @@ export function planWorldLocally(message, context = {}) {
 
 const agentEndpoint = import.meta.env.VITE_AGENT_API_URL?.trim() || '/api/agent'
 
+function previewLargeChange(result) {
+  if (result.proposal) return result
+  const requiresPreview = result.actions?.some((action) => ['load_preset', 'add_spline_track'].includes(action.type)) || result.actions?.length > 2
+  return requiresPreview ? { ...result, actions: [], proposal: { summary: result.proposalSummary ?? `Review ${result.actions.length} proposed world changes.`, actions: result.actions } } : result
+}
+
 export async function askWorldAgent({ message, scenario, telemetry, history = [], signal }) {
   try {
     const response = await fetch(agentEndpoint, {
@@ -78,9 +111,10 @@ export async function askWorldAgent({ message, scenario, telemetry, history = []
       signal,
     })
     if (!response.ok) throw new Error('Agent endpoint unavailable.')
-    return { ...(await response.json()), source: 'openai' }
+    const result = await response.json()
+    return { ...previewLargeChange(result), source: 'openai' }
   } catch (error) {
     if (error.name === 'AbortError') throw error
-    return planWorldLocally(message, { scenario, telemetry })
+    return previewLargeChange(planWorldLocally(message, { scenario, telemetry }))
   }
 }

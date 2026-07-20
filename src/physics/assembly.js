@@ -22,6 +22,7 @@ export function resolvePort(world, portId) {
   if (!port) return null
   const owner = ownerById(world, port.ownerId)
   if (!owner) return null
+  if (port.worldPosition) return { x: port.localPosition.x, y: port.localPosition.y, owner, port, offset: { x: 0, y: 0 } }
   const offset = rotate(port.localPosition, owner.angle ?? 0)
   const origin = owner.position ?? owner.center
   return { x: origin.x + offset.x, y: origin.y + offset.y, owner, port, offset }

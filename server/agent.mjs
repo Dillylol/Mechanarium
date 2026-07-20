@@ -11,8 +11,10 @@ const requestsByClient = new Map()
 
 const instructions = `You are Vector, the Mechanarium world-building agent and Socratic physics guide.
 Turn the student's request into safe, small edits to the current mechanics scenario.
-Use only the supported Scenario v3 action schema. Connections must name exact entity and port ids from the scenario; reject ambiguous graphs in the message instead of guessing.
+Use only the supported Scenario v4 action schema. Connections must name exact entity and port ids from the scenario; reject ambiguous graphs in the message instead of guessing.
+Spline geometry uses add_spline_track with 2-64 finite quintic knots. Each knot requires id, position, tangent, and secondDerivative. Large geometry and preset loads are previews, so describe them as proposals rather than completed changes.
 When the student asks a conceptual question, cite only supplied telemetry or trial measurements, label observation versus inference, and ask one targeted question.
+For a pasted physics problem, scaffold first: identify knowns and unknown, choose a principle, ask for the student’s next step, and only give a worked solution when requested or when the student says they are stuck. Never invent missing numerical values.
 Use two-subscript interaction language such as F_Earth_on_body and F_track_on_body.
 Never claim a change happened unless you include the corresponding action.
 Use the short conversation context only to resolve follow-up references; current scenario and telemetry are authoritative.
@@ -46,12 +48,38 @@ const tool = {
             otherEntityId: { type: ['string', 'null'] },
             otherPortId: { type: ['string', 'null'] },
             endpoint: { type: ['string', 'null'], enum: ['a', 'b', null] },
+            track: {
+              anyOf: [
+                { type: 'null' },
+                {
+                  type: 'object', additionalProperties: false,
+                  properties: {
+                    id: { type: 'string' }, name: { type: 'string' }, supportSide: { type: 'string', enum: ['left', 'right'] },
+                    thickness: { type: 'number' }, friction: { type: 'number' }, restitution: { type: 'number' }, startEnd: { type: 'string', enum: ['start', 'end'] },
+                    knots: { type: 'array', minItems: 2, maxItems: 64, items: { type: 'object', additionalProperties: false, properties: {
+                      id: { type: 'string' },
+                      position: { type: 'object', additionalProperties: false, properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] },
+                      tangent: { type: 'object', additionalProperties: false, properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] },
+                      secondDerivative: { type: 'object', additionalProperties: false, properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] },
+                    }, required: ['id', 'position', 'tangent', 'secondDerivative'] } },
+                  }, required: ['id', 'name', 'supportSide', 'thickness', 'friction', 'restitution', 'startEnd', 'knots'],
+                },
+              ],
+            },
           },
-          required: ['type', 'target', 'name', 'x', 'y', 'value', 'entityId', 'portId', 'otherEntityId', 'otherPortId', 'endpoint'],
+          required: ['type', 'target', 'name', 'x', 'y', 'value', 'entityId', 'portId', 'otherEntityId', 'otherPortId', 'endpoint', 'track'],
         },
       },
+      tutorial: {
+        anyOf: [
+          { type: 'null' },
+          { type: 'object', additionalProperties: false, properties: {
+            problemSummary: { type: 'string' }, knowns: { type: 'array', items: { type: 'string' }, maxItems: 12 }, unknown: { type: 'string' }, principle: { type: 'string' }, stage: { type: 'string', enum: ['identify-knowns', 'choose-model', 'derive', 'check', 'worked-solution'] }, nextPrompt: { type: 'string' },
+          }, required: ['problemSummary', 'knowns', 'unknown', 'principle', 'stage', 'nextPrompt'] },
+        ],
+      },
     },
-    required: ['message', 'actions'],
+    required: ['message', 'actions', 'tutorial'],
   },
 }
 

@@ -4,6 +4,7 @@ import { applyWorldContacts, resolveBeamBodyCollisions, resolveCircleCollisions 
 import { netWorldForce, worldPotentialEnergy } from './forces.js'
 import { conservationError, summarizeSystem, withEnergyTotal } from './metrics.js'
 import { add, scale } from './vector.js'
+import { sampleSpline } from '../domain/spline.js'
 
 export function assemblyDiagnostics(scenario) {
   const diagnostics = []
@@ -68,7 +69,7 @@ export function createWorld(input) {
     bodies,
     forces: source.forces,
     constraints: source.constraints,
-    tracks: source.tracks,
+    tracks: source.tracks.map((track) => track.type === 'spline' ? { ...track, _samples: sampleSpline(track) } : track),
     instruments: source.instruments,
     ports,
     customPorts: source.ports,
@@ -85,7 +86,7 @@ export function createWorld(input) {
   return { ...world, initialMetrics: metrics, metrics, energyError: conservationError(metrics.total, metrics.total) }
 }
 
-export function stepWorld(world, dt = world.fixedStep) {
+function stepWorldOnce(world, dt) {
   const initialLoads = connectorLoads(world)
   const predictedBodies = world.bodies.map((body) => {
     if (body.locked || body.mode === 'track') return body
@@ -140,6 +141,15 @@ export function stepWorld(world, dt = world.fixedStep) {
   return { ...next, metrics, energyError: conservationError(world.initialMetrics.total, metrics.total) }
 }
 
+export function stepWorld(world, dt = world.fixedStep) {
+  const minimumFeature = Math.max(0.04, Math.min(...world.tracks.map((track) => track.thickness ?? 0.18), 0.18) / 2)
+  const maximumSpeed = Math.max(0, ...world.bodies.map((body) => Math.hypot(body.velocity.x, body.velocity.y)))
+  const substeps = Math.max(1, Math.min(8, Math.ceil(maximumSpeed * dt / minimumFeature)))
+  let next = world
+  for (let index = 0; index < substeps; index += 1) next = stepWorldOnce(next, dt / substeps)
+  return next
+}
+
 export function updateBody(world, bodyId, changes) {
   return { ...world, bodies: world.bodies.map((body) => body.id === bodyId ? { ...body, ...changes } : body) }
 }
@@ -160,11 +170,17 @@ export function worldToScenario(world) {
       const serializedBody = { ...body }
       delete serializedBody.time
       delete serializedBody._contactLoads
+      delete serializedBody._trackContact
+      delete serializedBody._previousPosition
       return serializedBody
     }),
     forces: cloneScenario(world.forces),
     constraints: cloneScenario(world.constraints),
-    tracks: cloneScenario(world.tracks),
+    tracks: cloneScenario(world.tracks).map((track) => {
+      const serialized = { ...track }
+      delete serialized._samples
+      return serialized
+    }),
     instruments: cloneScenario(world.instruments),
     ports: cloneScenario(world.customPorts),
     joints: cloneScenario(world.joints),

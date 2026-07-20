@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { beamInertia, createBody, createConnector, createTrack, createWheel, fitAutoLengthBeams, validateScenario, wheelInertia } from '../domain/scenario.js'
+import { beamInertia, createBody, createConnector, createSplineTrack, createTrack, createWheel, fitAutoLengthBeams, validateScenario, wheelInertia } from '../domain/scenario.js'
+import { sampleSpline, splinePointAtDistance } from '../domain/spline.js'
 import { createInstrument, deriveGateResults, detectPhotogateCrossings, sampleTrialWorld } from '../domain/instruments.js'
 import { getPreset } from '../domain/presets.js'
 import { createFixedStepClock } from '../physics/clock.js'
@@ -103,6 +104,9 @@ function sampleWorld(world, bodyId) {
     axleReactionY: axle.y,
     normalForce: componentMagnitude('normal'),
     frictionForce: componentMagnitude('friction'),
+    trackCoordinate: body._trackContact?.distance ?? '',
+    trackCurvature: body._trackContact?.curvature ?? '',
+    trackRadius: body._trackContact?.curvature ? Math.abs(1 / body._trackContact.curvature) : '',
     inertia: body.inertia,
     assemblyInertia: body.assemblyInertia ?? body.inertia,
     connectorLength: connector?.length ?? '', connectorTension: connector?.tension ?? '', connectorExtension: connector?.extension ?? '', connectorElasticEnergy: connector?.elasticEnergy ?? '',
@@ -456,7 +460,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         const body = scenario.bodies.find((candidate) => candidate.id === proposal.movingOwnerId)
         const track = scenario.tracks.find((candidate) => candidate.id === proposal.movingOwnerId)
         if (body) body.position = { x: body.position.x + proposal.delta.x, y: body.position.y + proposal.delta.y }
-        if (track) track.center = { x: track.center.x + proposal.delta.x, y: track.center.y + proposal.delta.y }
+        if (track?.type === 'spline') track.knots = track.knots.map((knot) => ({ ...knot, position: { x: knot.position.x + proposal.delta.x, y: knot.position.y + proposal.delta.y } }))
+        else if (track) track.center = { x: track.center.x + proposal.delta.x, y: track.center.y + proposal.delta.y }
         const first = worldRef.current.portIndex.get(proposal.firstPortId)
         const second = worldRef.current.portIndex.get(proposal.secondPortId)
         scenario.joints.push({ id: nextId(proposal.jointType), type: proposal.jointType, a: { type: 'port', ownerId: first.ownerId, portId: first.id }, b: { type: 'port', ownerId: second.ownerId, portId: second.id } })
@@ -517,11 +522,14 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         scenario.bodies.push(createWheel({ id, position: { x: 0, y: 2.5 } }))
       } else if (target === 'ramp') {
         scenario.tracks.push(createTrack({ id, center: { x: 0, y: 0 }, angle: Math.PI / 9, length: 6 }))
+      } else if (['spline', 'loop', 'hill', 'valley'].includes(target)) {
+        scenario.tracks.push(createSplineTrack({ id, name: target === 'spline' ? 'Custom spline' : `${target[0].toUpperCase()}${target.slice(1)} track`, template: target === 'spline' ? 'blank' : target }))
       } else if (target === 'spring' || target === 'rope') {
         const body = scenario.bodies.find((candidate) => candidate.id === selectedRef.current) ?? scenario.bodies[0]
         scenario.connectors.push(createConnector(target, { id, a: { type: 'world', position: { x: body.position.x - 2.5, y: body.position.y + 1 } }, b: { type: 'port', ownerId: body.id, portId: `${body.id}:center` }, length: 2.5, restLength: 2.5 }))
       } else if (target === 'attachment') {
-        const owner = [...scenario.bodies, ...scenario.tracks].find((candidate) => candidate.id === selectedRef.current) ?? scenario.bodies[0]
+        const selectedOwner = [...scenario.bodies, ...scenario.tracks].find((candidate) => candidate.id === selectedRef.current)
+        const owner = selectedOwner?.type === 'spline' ? scenario.bodies[0] : (selectedOwner ?? scenario.bodies[0])
         scenario.ports.push({ id, ownerId: owner.id, name: `Port ${scenario.ports.length + 1}`, kind: 'custom', custom: true, localPosition: { x: 0, y: 0.5 } })
       } else if (target === 'gravity') {
         scenario.gravity.enabled = !scenario.gravity.enabled
@@ -545,7 +553,14 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   const moveEntity = useCallback((id, position) => {
     if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position, velocity: { x: 0, y: 0 } })
-    else if (worldRef.current.tracks.some((track) => track.id === id)) updateTrack(id, { center: position })
+    else if (worldRef.current.tracks.some((track) => track.id === id)) {
+      const track = worldRef.current.tracks.find((candidate) => candidate.id === id)
+      if (track.type === 'spline') {
+        const samples = track._samples ?? sampleSpline(track)
+        const center = samples.reduce((sum, sample) => ({ x: sum.x + sample.position.x / samples.length, y: sum.y + sample.position.y / samples.length }), { x: 0, y: 0 })
+        updateTrack(id, { knots: track.knots.map((knot) => ({ ...knot, position: { x: knot.position.x + position.x - center.x, y: knot.position.y + position.y - center.y } })) })
+      } else updateTrack(id, { center: position })
+    }
     else if (worldRef.current.forces.some((force) => force.id === id && force.type === 'central')) updateForce(id, { center: position })
     else if (worldRef.current.instruments.some((instrument) => instrument.id === id && instrument.type === 'photogate')) updateInstrument(id, { center: position })
   }, [updateBody, updateForce, updateInstrument, updateTrack])
@@ -556,16 +571,24 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     const origin = instrument.center ?? { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 }
     let best = null
     for (const track of worldRef.current.tracks) {
+      if (track.type === 'spline') {
+        const samples = track._samples ?? sampleSpline(track)
+        for (const sample of samples) {
+          const distance = Math.hypot(sample.position.x - origin.x, sample.position.y - origin.y)
+          if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent: sample.tangent, point: sample.position, distance, angle: Math.atan2(sample.tangent.y, sample.tangent.x) }
+        }
+        continue
+      }
       const tangent = { x: Math.cos(track.angle), y: Math.sin(track.angle) }
       const normal = { x: -tangent.y, y: tangent.x }
       const relative = { x: origin.x - track.center.x, y: origin.y - track.center.y }
       const along = Math.max(-track.length / 2, Math.min(track.length / 2, relative.x * tangent.x + relative.y * tangent.y))
       const point = { x: track.center.x + tangent.x * along + normal.x * track.thickness / 2, y: track.center.y + tangent.y * along + normal.y * track.thickness / 2 }
       const distance = Math.hypot(point.x - origin.x, point.y - origin.y)
-      if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent, point, distance }
+      if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent, point, distance, angle: track.angle }
     }
     if (!best) return false
-    if (instrument.type === 'photogate') updateInstrument(instrument.id, { center: best.point, angle: best.track.angle + Math.PI / 2 })
+    if (instrument.type === 'photogate') updateInstrument(instrument.id, { center: best.point, angle: best.angle + Math.PI / 2 })
     else {
       const readingLength = Math.hypot(instrument.b.x - instrument.a.x, instrument.b.y - instrument.a.y)
       updateInstrument(instrument.id, { a: { x: best.point.x - best.tangent.x * readingLength / 2, y: best.point.y - best.tangent.y * readingLength / 2 }, b: { x: best.point.x + best.tangent.x * readingLength / 2, y: best.point.y + best.tangent.y * readingLength / 2 } })
@@ -578,6 +601,14 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     const track = worldRef.current.tracks.find((candidate) => candidate.id === trackId)
     const body = worldRef.current.bodies.find((candidate) => candidate.id === bodyId) ?? worldRef.current.bodies.find((candidate) => candidate.shape !== 'beam')
     if (!track || !body) return
+    if (track.type === 'spline') {
+      const samples = track._samples ?? sampleSpline(track)
+      const length = samples.at(-1)?.distance ?? 0
+      const point = splinePointAtDistance(track, track.startEnd === 'end' ? length : 0)
+      if (!point) return
+      updateBody(body.id, { position: { x: point.position.x + point.normal.x * body.radius, y: point.position.y + point.normal.y * body.radius }, velocity: { x: 0, y: 0 } })
+      return
+    }
     const sign = track.startEnd === 'end' ? 1 : -1
     const tangent = { x: Math.cos(track.angle), y: Math.sin(track.angle) }
     const normal = { x: -tangent.y, y: tangent.x }
@@ -600,6 +631,10 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     actions.forEach((action) => {
       if (action.type === 'add_body') addElement(action.target)
       if (action.type === 'add_track' || action.type === 'add_constraint' && action.target === 'ramp') addElement('ramp')
+      if (action.type === 'add_spline_track') {
+        const track = createSplineTrack({ ...action.track, type: 'spline', id: action.track?.id ?? nextId('spline') })
+        commitScenarioEdit((scenario) => { scenario.tracks.push(track) })
+      }
       if (action.type === 'add_beam') addElement('beam')
       if (action.type === 'add_wheel' || action.type === 'add_body' && action.target === 'wheel') addElement('wheel')
       if (action.type === 'add_connector' || action.type === 'add_force' && ['spring', 'rope'].includes(action.target)) addElement(action.target)

@@ -1,8 +1,9 @@
 import { INTEGRATORS } from '../physics/constants.js'
 import { isFiniteVector } from '../physics/vector.js'
 import { createInstrument, validateInstrument } from './instruments.js'
+import { createSplineKnot, sampleSpline, splinePointAtDistance, splineTemplate, validateSplineTrack } from './spline.js'
 
-export const SCENARIO_VERSION = 3
+export const SCENARIO_VERSION = 4
 export const BODY_SHAPES = Object.freeze(['circle', 'box', 'beam', 'wheel'])
 export const BEAM_MODES = Object.freeze(['dynamic', 'pinned', 'track'])
 export const WHEEL_INERTIA_MODELS = Object.freeze(['disk', 'hoop'])
@@ -71,6 +72,7 @@ export function createWheel(overrides = {}) {
 }
 
 export function createTrack(overrides = {}) {
+  if (overrides.type === 'spline') return createSplineTrack(overrides)
   return {
     id: overrides.id ?? `track-${crypto.randomUUID()}`,
     name: overrides.name ?? 'Ramp',
@@ -82,6 +84,21 @@ export function createTrack(overrides = {}) {
     friction: overrides.friction ?? 0.12,
     restitution: overrides.restitution ?? 0.2,
     startEnd: overrides.startEnd ?? 'start',
+  }
+}
+
+export function createSplineTrack(overrides = {}) {
+  const knots = (overrides.knots ?? splineTemplate(overrides.template ?? 'blank')).map((knot) => createSplineKnot(knot))
+  return {
+    id: overrides.id ?? `track-${crypto.randomUUID()}`,
+    name: overrides.name ?? 'Spline track',
+    type: 'spline',
+    knots,
+    thickness: overrides.thickness ?? 0.18,
+    friction: overrides.friction ?? 0.12,
+    restitution: overrides.restitution ?? 0.05,
+    startEnd: overrides.startEnd ?? 'start',
+    supportSide: overrides.supportSide ?? 'left',
   }
 }
 
@@ -112,6 +129,18 @@ export function defaultPorts(owner) {
     { id: `${owner.id}:center`, ownerId: owner.id, name: 'Center', kind: 'track', localPosition: { x: 0, y: owner.thickness / 2 } },
     { id: `${owner.id}:end`, ownerId: owner.id, name: 'End', kind: 'track', localPosition: { x: owner.length / 2, y: owner.thickness / 2 } },
   ]
+  if (owner.type === 'spline') {
+    const samples = sampleSpline(owner)
+    const length = samples.at(-1)?.distance ?? 0
+    const start = samples[0]?.position ?? { x: 0, y: 0 }
+    const middle = splinePointAtDistance(owner, length / 2)?.position ?? start
+    const end = samples.at(-1)?.position ?? start
+    return [
+      { id: `${owner.id}:start`, ownerId: owner.id, name: 'Start', kind: 'track', localPosition: start, worldPosition: true },
+      { id: `${owner.id}:center`, ownerId: owner.id, name: 'Center', kind: 'track', localPosition: middle, worldPosition: true },
+      { id: `${owner.id}:end`, ownerId: owner.id, name: 'End', kind: 'track', localPosition: end, worldPosition: true },
+    ]
+  }
   if (owner.shape === 'wheel') return [
     { id: `${owner.id}:center`, ownerId: owner.id, name: 'Axle', kind: 'structural', localPosition: { x: 0, y: 0 } },
     { id: `${owner.id}:north`, ownerId: owner.id, name: 'North rim', kind: 'connector', localPosition: { x: 0, y: owner.radius } },
@@ -140,6 +169,7 @@ export function endpointWorldPosition(scenario, endpoint) {
   const port = allPorts(scenario).find((candidate) => candidate.id === endpoint.portId && candidate.ownerId === endpoint.ownerId)
   const owner = [...scenario.bodies, ...scenario.tracks].find((candidate) => candidate.id === endpoint.ownerId)
   if (!port || !owner) return null
+  if (port.worldPosition) return { ...port.localPosition }
   const angle = owner.angle ?? 0
   const origin = owner.position ?? owner.center
   return {
@@ -181,7 +211,7 @@ function fromLegacyIncline(constraint) {
   })
 }
 
-function normalizeV3(input) {
+function normalizeV4(input) {
   const scenario = copy(input)
   scenario.version = SCENARIO_VERSION
   scenario.gravity ??= { g: 9.80665, direction: { x: 0, y: -1 }, enabled: false }
@@ -193,6 +223,7 @@ function normalizeV3(input) {
   scenario.forces ??= []
   scenario.constraints ??= []
   scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
+  scenario.tracks = scenario.tracks.map((track) => createTrack(track))
   scenario.connectors = scenario.connectors.map((connector) => createConnector(connector.type, connector))
   scenario.instruments = scenario.instruments.map((instrument) => createInstrument(instrument.type, instrument))
   return scenario
@@ -200,7 +231,7 @@ function normalizeV3(input) {
 
 export function migrateScenario(input) {
   if (!input || typeof input !== 'object') return input
-  if (input.version === SCENARIO_VERSION || input.version === 2) return normalizeV3(input)
+  if ([SCENARIO_VERSION, 3, 2].includes(input.version)) return normalizeV4(input)
   if (input.version !== 1) return copy(input)
 
   const source = copy(input)
@@ -220,7 +251,7 @@ export function migrateScenario(input) {
     stiffness: force.stiffness,
     damping: force.damping,
   }))
-  return normalizeV3({
+  return normalizeV4({
     ...source,
     version: 2,
     gravity: { g: masterGravity?.g ?? 9.80665, direction: { x: 0, y: -1 }, enabled: Boolean(masterGravity) },
@@ -272,7 +303,9 @@ export function validateScenario(input) {
   for (const track of scenario.tracks ?? []) {
     if (!track.id || ids.has(track.id)) errors.push(`Track id must be unique: ${track.id ?? 'missing'}.`)
     ids.add(track.id)
-    if (track.type !== 'segment' || !isFiniteVector(track.center) || !finitePositive(track.length) || !finitePositive(track.thickness) || !Number.isFinite(track.angle)) errors.push(`Track ${track.id} has invalid geometry.`)
+    if (!['segment', 'spline'].includes(track.type) || !finitePositive(track.thickness)) errors.push(`Track ${track.id} has invalid geometry.`)
+    else if (track.type === 'segment' && (!isFiniteVector(track.center) || !finitePositive(track.length) || !Number.isFinite(track.angle))) errors.push(`Track ${track.id} has invalid segment geometry.`)
+    else if (track.type === 'spline') errors.push(...validateSplineTrack(track).map((message) => `Track ${track.id}: ${message}`))
   }
   const physicalOwnerIds = new Set(ids)
   for (const instrument of scenario.instruments ?? []) {

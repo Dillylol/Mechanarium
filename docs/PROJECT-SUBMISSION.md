@@ -10,11 +10,11 @@ While studying AP Physics C: Mechanics, I often struggled to connect equations w
 
 Mechanarium is an interactive mechanics sandbox and virtual laboratory designed primarily for AP Physics 1, AP Physics C: Mechanics, and introductory university physics courses. The workspace is rendered in three dimensions, while the current deterministic physics model remains planar.
 
-Students can construct and investigate systems involving projectiles, collisions and momentum transfer, ramps, springs, ropes, pendulums, rotating beams, connected assemblies, and central-force orbits. Nine prepared experiments provide starting points, while the builder supports custom bodies, straight tracks, attachment ports, pin and rigid joints, and massless spring and rope connectors.
+Students can construct and investigate systems involving projectiles, collisions, ramps, springs, ropes, pendulums, rotating beams, connected assemblies, Atwood machines, central-force orbits, and vertical loops. Thirteen prepared experiments provide starting points, while the builder supports custom bodies, straight tracks, C² quintic spline tracks, attachment ports, pin and rigid joints, and massless spring and rope connectors.
 
 The simulator is designed as a laboratory rather than only a demonstration. Students can inspect force vectors and kinematic or energy telemetry, place nonphysical rulers and photogates, record repeated trials, compare plots, and export scenario or laboratory data as JSON and CSV. The guided ramp-motion investigation asks students to state a prediction, collect evidence, review a trial, and decide whether the measurements support their reasoning.
 
-Mechanarium also includes **Vector**, a world-building and Socratic learning agent. Vector can translate natural-language requests into supported Scenario v2 actions, such as loading experiments or adding apparatus. When discussing results, it is instructed to distinguish observations from inferences, ground its response in the supplied telemetry or trial measurements, and ask one focused question at a time. An OpenAI-backed agent is available when a server-side API key is configured; otherwise, the same interface falls back to a deterministic local planner.
+Mechanarium also includes **Vector**, a world-building and Socratic learning agent. Vector translates natural-language requests into validated Scenario v4 actions, previews substantial changes such as roller coasters before applying them, and scaffolds pasted physics problems before offering a worked solution. When discussing results, it distinguishes observations from inferences and grounds its response in supplied telemetry or trial measurements. A remote model is available when a server-side API key is configured; otherwise, the same interface uses a deterministic local planner.
 
 ## How we built it
 
@@ -114,13 +114,39 @@ and connected assemblies use the parallel-axis theorem when calculating compound
 I = I_{\mathrm{center}} + md^2.
 \]
 
+Curved tracks are piecewise quintic Hermite splines. Every knot stores position, first derivative, and second derivative. A span is
+
+\[
+\vec{p}(u)=\sum_{i=0}^{5}\vec{a}_i u^i,\qquad 0\le u\le1,
+\]
+
+with coefficients chosen to match \(\vec{p}\), \(\vec{p}'\), and \(\vec{p}''\) at both endpoints. Sharing those three values at an interior knot provides CÂ² continuity. Curvature is calculated from
+
+\[
+\kappa=\frac{x'y''-y'x''}{(x'^2+y'^2)^{3/2}}.
+\]
+
+The engine adaptively samples the same mathematical curve for rendering, contact, measurement, and arclength telemetry. Objects are not constrained to a stored rail coordinate, so insufficient normal force causes genuine detachment. For the idealized loop investigation, the comparison relationships are
+
+\[
+h_{\min}=\frac{R(5+b)}{2},\qquad I=bmr^2,
+\]
+
+and at the loop top
+
+\[
+N=m\left(\frac{v^2}{R}-g\right).
+\]
+
+The sliding result is recovered with \(b=0\), giving \(h_{\min}=5R/2\). These formulas are used only when the simulated assumptions match the idealized model.
+
 ## Challenges we ran into
 
 One of the greatest challenges was making the physics accurate, stable, and responsive while allowing many different systems to interact. Springs, slack and tensioned ropes, collisions, friction, rotating beams, contacts, and connected assemblies each introduce different numerical and geometric problems.
 
 Small integration or constraint errors can accumulate quickly in pendulums, oscillators, and compound rotational systems. We addressed this with a fixed 120 Hz simulation boundary, a velocity-Verlet-style world step, deterministic updates, explicit collision and contact passes, constraint solving, and automated comparisons with analytical physics results. The test suite covers spring and pendulum periods, energy behavior, beam and compound inertia, bounded pin error, track contact, friction and restitution, collisions, central forces, and a 60-second numerical assembly soak.
 
-Another challenge was balancing flexibility with accessibility. Mechanarium needed to support meaningful construction without requiring students to understand its internal data model. This led to prepared experiments, visual editing tools, explicit snap previews, reusable Scenario v2 files, built-in measurement instruments, guided trial states, and Vector's natural-language interface.
+Another challenge was balancing flexibility with accessibility. Mechanarium needed to support meaningful construction without requiring students to understand its internal data model. This led to prepared experiments, direct spline handles, explicit change previews, reusable Scenario v4 files, measurement instruments, guided tutorials, and Vector's natural-language interface.
 
 Performance also required architectural restraint. Instead of assuming that a Rust/WebAssembly rewrite would automatically improve the experience, we separated the 120 Hz physics loop from 30 Hz React publication and measured the result. The current documentation records the worker and WebAssembly migration as deferred until profiling demonstrates a need.
 
@@ -128,9 +154,9 @@ Performance also required architectural restraint. Instead of assuming that a Ru
 
 I am most proud of how far Mechanarium has grown from a single rotational-physics prototype. It is now a flexible mechanics environment where students can build systems, test predictions, gather evidence, and investigate many topics found in first-year physics.
 
-The current project includes nine prepared experiments, a versioned and validated scenario format, construction and assembly tools, live physics telemetry, force and motion visualization, rulers and photogates, persistent trial notebooks, comparison plots, data export, and local or OpenAI-backed guidance. Its automated quality gate currently contains 71 tests across 13 files, including a 60-second numerical soak, and passes linting and the production build.
+The current project includes thirteen prepared experiments, a versioned and validated scenario format, straight and spline construction tools, free-body loop contact, live physics telemetry, force and motion visualization, rulers and photogates, persistent trial notebooks, comparison plots, data export, five guided tutorials, and local or remote-model guidance. The automated quality gate includes a 60-second numerical soak and passes linting and the production build.
 
-I am also proud that my former physics teacher and other teachers, students, and clubs have shown immediate interest in using it. Seeing people work through familiar physics problems in a more intuitive and playful way has reinforced the purpose of the project: physics explains the world around us, so learning it should feel exploratory rather than inaccessible.
+I am proud that the simulator now connects world construction, solver-authoritative force and torque measurements, repeatable experiments, curved-track physics, and guided reasoning in one portable web application. The result demonstrates the central concept directly: mechanics becomes easier to reason about when students can build a system, watch it move, measure it, and test their explanation.
 
 ## What we learned
 
@@ -146,16 +172,16 @@ The goal is not for AI to replace the reasoning involved in physics. It is to re
 
 I learned about the Build Week challenge only four days before its deadline, so Mechanarium still needs broader user testing with teachers and students. The next steps are to refine Vector's teaching behavior, conduct accessibility and device testing, improve performance where profiling identifies real bottlenecks, and expand the library of guided investigations.
 
-The physics roadmap also leaves room for curved and continuous tracks, more advanced joints and materials, deeper orbital investigations, and a worker or Rust/WebAssembly engine if future workloads justify one. These are future directions rather than claims about the current build.
+The physics roadmap leaves room for more advanced joints and materials, moving or compound pulleys, deeper orbital investigations, image-based problem intake, symbolic regression, and a worker or Rust/WebAssembly engine if future workloads justify one. These are future directions rather than claims about the current build.
 
 The long-term goal is to create a **physics class in your pocket**: a place where anyone can build a world, observe its behavior, collect evidence, and develop an intuitive understanding of mechanics and calculus-based physics.
 
 ## Technical accuracy notes
 
-- The current engine is JavaScript, not Rust or WebAssembly. Those technologies are deferred in `docs/STATUS.md`, `docs/milestones/MILESTONE-6.md`, and the project roadmap.
+- The current engine is JavaScript, not Rust or WebAssembly. Those technologies remain deferred because profiling has not justified the migration.
 - Calling the production solver simply an "Euler physics engine" is inaccurate. The actual world step in `src/physics/world.js` uses half-step velocity and angular-velocity updates consistent with kick–drift–kick velocity Verlet/leapfrog integration.
 - Because drag and spring damping can make acceleration velocity-dependent, "velocity-Verlet-style" is more precise than claiming that every supported force follows the textbook position-only velocity Verlet algorithm exactly.
 - `src/physics/integrators.js` separately implements explicit Euler, symplectic Euler, and velocity Verlet for reference and testing.
 - The mechanics are planar even though the laboratory is rendered with a three-dimensional camera and scene.
-- Atwood machines are part of the broader curriculum roadmap, but the current repository does not include a dedicated Atwood-machine preset or pulley model. They are therefore omitted from the list of implemented systems above.
+- Ideal and rotating-pulley Atwood machines are implemented with routed ropes, axle reactions, equal or unequal tensions, and pulley torque.
 - The OpenAI-backed Vector agent currently defaults to `gpt-5.6-luna` in `server/agent.mjs`; GPT-5.6 Sol describes the development collaborator, not the simulator's default runtime model.
