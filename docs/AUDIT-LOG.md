@@ -2,9 +2,12 @@
 
 ## 2026-07-20 — Scenario v4 demo sign-off
 
-**Repository:** `Dillylol/Mechanarium`  
-**Release branch:** `main`  
-**Audit timezone:** America/Chicago  
+**Repository:** `Dillylol/Mechanarium`
+
+**Release branch:** `main`
+
+**Audit timezone:** America/Chicago
+
 **Decision:** Approved for public technical demonstration, subject to the documented release boundaries below.
 
 ### Change set reviewed
