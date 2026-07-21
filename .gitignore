@@ -44,6 +44,3 @@ demo/*.webp
 scripts/probe-agent.mjs
 scripts/probe-frq.mjs
 scripts/probe-out.txt
-
-# Internal audit notes
-docs/audit_report2.md

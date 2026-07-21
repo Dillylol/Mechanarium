@@ -176,6 +176,7 @@ Mechanarium was developed in active pair-programming collaboration with OpenAI m
 - [docs/TESTING.md](./docs/TESTING.md) — Verification suite report and numerical soak test specifications.
 - [docs/AGENT-DEPLOYMENT.md](./docs/AGENT-DEPLOYMENT.md) — Configuration and deployment guide for the Vector AI server.
 - [docs/AUDIT-LOG.md](./docs/AUDIT-LOG.md) — Dated release logs, solver boundaries, and feature history.
+- [docs/audit_report2.md](./docs/audit_report2.md) — Full system audit: Vector issues, physics verification matrix, and fix backlog.
 - [demo/DEMO-SCRIPT.md](./demo/DEMO-SCRIPT.md) — Hackathon video walkthrough script (Lab 14 spline roller coaster + Vector).
 - [demo/DEMO-PLAN.md](./demo/DEMO-PLAN.md) — Demo flow planning notes and timing targets.
 
