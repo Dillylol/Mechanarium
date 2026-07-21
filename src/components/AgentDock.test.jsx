@@ -52,6 +52,6 @@ describe('Vector agent dock', () => {
     expect(await screen.findByRole('dialog', { name: 'Vector world proposal' })).toBeInTheDocument()
     expect(onApply).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Apply' }))
-    expect(onApply).toHaveBeenCalledWith([{ type: 'load_preset', target: 'spline-roller-coaster' }])
+    expect(onApply).toHaveBeenCalledWith([{ type: 'load_preset', target: 'loop-the-loop' }])
   })
 })

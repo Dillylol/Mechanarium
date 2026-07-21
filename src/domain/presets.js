@@ -1,7 +1,7 @@
 import { INTEGRATORS } from '../physics/constants.js'
 import { cloneScenario, createBody, createConnector, createSplineTrack, createTrack, createWheel, migrateScenario, SCENARIO_VERSION } from './scenario.js'
 import { createInstrument } from './instruments.js'
-import { createSplineKnot, splinePointAtDistance } from './spline.js'
+import { createSplineKnot } from './spline.js'
 
 const common = {
   version: 1,
@@ -30,21 +30,6 @@ const rollingStart = {
   y: rollingTrack.center.y - rollingTangent.y * rollingTrack.length / 2 + rollingNormal.y * (rollingTrack.thickness / 2 + 0.5),
 }
 
-const coasterTrack = createSplineTrack({
-  id: 'coaster-track', name: 'Editable coaster', friction: 0.9, restitution: 0, ideal: true,
-  knots: [
-    createSplineKnot({ id: 'coaster-release', position: { x: -7, y: 5.4 }, tangent: { x: 3.5, y: -2.5 }, secondDerivative: { x: 0, y: 0 } }),
-    createSplineKnot({ id: 'coaster-valley-a', position: { x: -3.5, y: -1.3 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 5 } }),
-    createSplineKnot({ id: 'coaster-hill', position: { x: 0, y: 2.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: -4 } }),
-    createSplineKnot({ id: 'coaster-valley-b', position: { x: 3.3, y: -0.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 4 } }),
-    createSplineKnot({ id: 'coaster-finish', position: { x: 7, y: 1.1 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
-  ],
-})
-const coasterRelease = splinePointAtDistance(coasterTrack, 0)
-const coasterPosition = {
-  x: coasterRelease.position.x + coasterRelease.normal.x * 0.3,
-  y: coasterRelease.position.y + coasterRelease.normal.y * 0.3,
-}
 
 
 
@@ -90,7 +75,8 @@ const presets = [
       createInstrument('photogate', { id: 'rolling-gate-a', name: 'Photogate assembly A', center: { x: -2.5, y: 2.75 }, angle: rollingTrack.angle + Math.PI / 2, targetBodyId: 'roller', pairId: 'rolling-gate-pair', pairRole: 'A', nominalSpacing: 3, trackId: 'rolling-ramp', trackDistance: 3 }),
       createInstrument('photogate', { id: 'rolling-gate-b', name: 'Photogate assembly B', center: { x: 0.13, y: 1.31 }, angle: rollingTrack.angle + Math.PI / 2, targetBodyId: 'roller', pairId: 'rolling-gate-pair', pairRole: 'B', nominalSpacing: 3, trackId: 'rolling-ramp', trackDistance: 6 }),
     ],
-    ports: [], joints: [], connectors: [], forces: [], constraints: [],
+    ports: [], joints: [], connectors: [], forces: [],
+    constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }],
   },
   {
     ...common,
@@ -190,7 +176,8 @@ const presets = [
         b: { x: -2.022179320871207, y: -2.705398894640246 },
       }),
     ],
-    ports: [], joints: [], forces: [], constraints: [],
+    ports: [], joints: [], forces: [],
+    constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }],
   },
   {
     ...common,
@@ -254,7 +241,8 @@ const presets = [
     ],
     connectors: [createConnector('rope', { id: 'ideal-rope', name: 'Atwood rope', a: { type: 'port', ownerId: 'ideal-mass-a', portId: 'ideal-mass-a:center' }, b: { type: 'port', ownerId: 'ideal-mass-b', portId: 'ideal-mass-b:center' }, route: { type: 'wheel', wheelId: 'ideal-wheel', wrap: 'top', aSide: 'left' } })],
     joints: [{ id: 'ideal-axle', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'ideal-wheel', portId: 'ideal-wheel:center' } }],
-    tracks: [], ports: [], forces: [], constraints: [], instruments: [],
+    tracks: [], ports: [], forces: [], instruments: [],
+    constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }],
   },
   {
     ...common,
@@ -273,7 +261,8 @@ const presets = [
     ],
     connectors: [createConnector('rope', { id: 'rotating-rope', name: 'Atwood rope', a: { type: 'port', ownerId: 'rotating-mass-a', portId: 'rotating-mass-a:center' }, b: { type: 'port', ownerId: 'rotating-mass-b', portId: 'rotating-mass-b:center' }, route: { type: 'wheel', wheelId: 'rotating-wheel', wrap: 'top', aSide: 'left' } })],
     joints: [{ id: 'rotating-axle', type: 'pin', a: { type: 'world', position: { x: 0, y: 4 } }, b: { type: 'port', ownerId: 'rotating-wheel', portId: 'rotating-wheel:center' } }],
-    tracks: [], ports: [], forces: [], constraints: [], instruments: [],
+    tracks: [], ports: [], forces: [], instruments: [],
+    constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }],
   },
   {
     ...common,
@@ -287,21 +276,8 @@ const presets = [
     gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
     bodies: [createWheel({ id: 'loop-rider', name: 'Rolling disk', mass: 1, radius: 0.28, position: { x: -5.82, y: 6.55 }, inertiaModel: 'disk', friction: 0.75, restitution: 0, color: '#f2cf00' })],
     tracks: [createSplineTrack({ id: 'loop-track', name: 'Vertical loop', template: 'loop', friction: 0.8, restitution: 0, ideal: true })],
-    ports: [], joints: [], connectors: [], forces: [], constraints: [], instruments: [],
-  },
-  {
-    ...common,
-    version: SCENARIO_VERSION,
-    duration: 16,
-    id: 'spline-roller-coaster',
-    name: 'Spline Roller Coaster',
-    category: 'Energy & Curved Motion',
-    description: 'Explore changing speed, curvature, and normal force across a smooth custom track.',
-    lesson: 'Height controls the energy budget while local curvature controls the normal force required to follow the rail.',
-    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
-    bodies: [createWheel({ id: 'coaster-car', name: 'Coaster wheel', mass: 1.2, radius: 0.3, position: coasterPosition, inertiaModel: 'disk', friction: 0.9, restitution: 0, color: '#78e6d5' })],
-    tracks: [coasterTrack],
-    ports: [], joints: [], connectors: [], forces: [], constraints: [], instruments: [],
+    ports: [], joints: [], connectors: [], forces: [], instruments: [],
+    constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }],
   },
 ]
 

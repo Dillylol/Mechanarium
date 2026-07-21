@@ -59,7 +59,7 @@ describe('local world planner', () => {
   it('previews an offline roller coaster instead of applying it immediately', () => {
     const plan = planWorldLocally('Create a rollercoaster')
     expect(plan.actions).toEqual([])
-    expect(plan.proposal.actions).toEqual([{ type: 'load_preset', target: 'spline-roller-coaster' }])
+    expect(plan.proposal.actions).toEqual([{ type: 'load_preset', target: 'loop-the-loop' }])
   })
 
   it('scaffolds a pasted problem before offering a worked approach', () => {

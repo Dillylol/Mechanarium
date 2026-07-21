@@ -15,8 +15,8 @@ const PRESET_ALIASES = [
   ['rotating atwood', 'rotating-atwood'],
   ['atwood machine', 'rotating-atwood'],
   ['loop', 'loop-the-loop'],
-  ['roller coaster', 'spline-roller-coaster'],
-  ['rollercoaster', 'spline-roller-coaster'],
+  ['roller coaster', 'loop-the-loop'],
+  ['rollercoaster', 'loop-the-loop'],
   ['oscillator', 'spring-oscillator'],
   ['orbit', 'orbital-motion'],
 ]
@@ -42,13 +42,10 @@ export function planWorldLocally(message, context = {}) {
   }
 
   if (/loop|roller\s*coaster|coaster/.test(normalized) && /(create|build|make|show|load)/.test(normalized)) {
-    const isLoop = /loop/.test(normalized)
-    const target = isLoop ? 'loop-the-loop' : 'spline-roller-coaster'
-    const name = isLoop ? 'Loop-the-Loop' : 'Spline Roller Coaster'
     return {
-      message: `I prepared the ${name} experiment. Review the proposed world before applying it.`,
+      message: `I prepared the Loop-the-Loop experiment. Review the proposed world before applying it.`,
       actions: [],
-      proposal: { summary: `Replace the current world with the editable ${name} experiment.`, actions: [{ type: 'load_preset', target }] },
+      proposal: { summary: `Replace the current world with the editable Loop-the-Loop experiment.`, actions: [{ type: 'load_preset', target: 'loop-the-loop' }] },
       source: 'local',
     }
   }

@@ -71,9 +71,24 @@ describe('spline track contact', () => {
     expect(maximumTrackCoordinate).toBeLessThan(14)
   })
 
-  it('runs the prepared roller coaster across its final hill without artificial energy loss', () => {
-    const scenario = getPreset('spline-roller-coaster')
-    const trackLength = splineLength(scenario.tracks[0])
+  it('runs a custom spline coaster across its hill without artificial energy loss', () => {
+    const track = createSplineTrack({
+      id: 'custom-coaster', name: 'Coaster track', friction: 0.9, restitution: 0, ideal: true,
+      knots: [
+        createSplineKnot({ id: 'k0', position: { x: -7, y: 5.4 }, tangent: { x: 3.5, y: -2.5 }, secondDerivative: { x: 0, y: 0 } }),
+        createSplineKnot({ id: 'k1', position: { x: -3.5, y: -1.3 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 5 } }),
+        createSplineKnot({ id: 'k2', position: { x: 0, y: 2.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: -4 } }),
+        createSplineKnot({ id: 'k3', position: { x: 3.3, y: -0.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 4 } }),
+        createSplineKnot({ id: 'k4', position: { x: 7, y: 1.1 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
+      ],
+    })
+    const release = splinePointAtDistance(track, 0)
+    const scenario = {
+      ...getPreset('projectile-motion'),
+      bodies: [createWheel({ id: 'coaster-car', name: 'Coaster wheel', mass: 1.2, radius: 0.3, position: { x: release.position.x + release.normal.x * 0.3, y: release.position.y + release.normal.y * 0.3 }, inertiaModel: 'disk', friction: 0.9, restitution: 0, color: '#78e6d5' })],
+      tracks: [track],
+    }
+    const trackLength = splineLength(track)
     let maximumTrackCoordinate = 0
     let maximumEnergyError = 0
     run(createWorld(scenario), 12, (world) => {

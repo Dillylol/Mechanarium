@@ -14,7 +14,7 @@ export const ACTION_TARGETS = Object.freeze([
   'projectile-motion', 'momentum-collision', 'rolling-incline', 'spring-oscillator', 'spring-ramp-launch',
   'orbital-motion', 'inclined-spring-oscillator', 'rope-pendulum',
   'physical-pendulum', 'compound-pendulum', 'ideal-atwood', 'rotating-atwood',
-  'loop-the-loop', 'spline-roller-coaster',
+  'loop-the-loop',
 ])
 
 const targetsByAction = new Map([
@@ -35,7 +35,7 @@ const targetsByAction = new Map([
   ['remove_force', new Set(['gravity'])],
   ['remove_constraint', new Set(['ramp', 'floor'])],
   ['disable_gravity', new Set(['gravity'])],
-  ['load_preset', new Set(ACTION_TARGETS.filter((target) => target.endsWith('-motion') || target.endsWith('-collision') || target.endsWith('-incline') || target.endsWith('-oscillator') || target.endsWith('-pendulum') || target.endsWith('-atwood') || target.endsWith('-launch') || ['loop-the-loop', 'spline-roller-coaster'].includes(target)))],
+  ['load_preset', new Set(ACTION_TARGETS.filter((target) => target.endsWith('-motion') || target.endsWith('-collision') || target.endsWith('-incline') || target.endsWith('-oscillator') || target.endsWith('-pendulum') || target.endsWith('-atwood') || target.endsWith('-launch') || ['loop-the-loop'].includes(target)))],
   ['add_event', new Set(['event', null])],
   ['none', new Set([null])],
 ])
@@ -93,7 +93,7 @@ export function normalizeActionTarget(type, target) {
   }
   if (type === 'load_preset') {
     if (['collision', 'momentum', '1d-collision', 'momentum-collision'].some((alias) => raw.includes(alias))) return 'momentum-collision'
-    if (['roller-coaster', 'rollercoaster', 'coaster', 'spline-roller-coaster'].some((alias) => raw.includes(alias))) return 'spline-roller-coaster'
+    if (['roller-coaster', 'rollercoaster', 'coaster', 'loop'].some((alias) => raw.includes(alias))) return 'loop-the-loop'
   }
   if (type === 'update_body') {
     // update_body uses entityId/name for body lookup; only a small fixed set are valid shape aliases

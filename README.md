@@ -121,7 +121,7 @@ Mechanarium includes full sample datasets and standardized file formats for coll
 Pre-packaged scenario files define complete physical initial conditions (bodies, tracks, connectors, joints, forces, instruments, and boundaries). Sample scenarios include:
 
 - `spring-ramp-launch.mechanarium2.json` — Block compressed against an unattached spring on a frictionless surface launching up a curved ramp.
-- `projectile-motion`, `momentum-collision`, `rolling-incline`, `spring-oscillator`, `orbital-motion`, `ideal-atwood`, `rotating-atwood`, `loop-the-loop`, and `spline-roller-coaster`.
+- `projectile-motion`, `momentum-collision`, `rolling-incline`, `spring-oscillator`, `orbital-motion`, `ideal-atwood`, `rotating-atwood`, and `loop-the-loop`.
 
 
 
