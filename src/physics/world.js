@@ -90,7 +90,6 @@ export function createWorld(input) {
 
 export function processWorldEvents(world) {
   if (!world.events || !world.events.length) return world
-  let modified = false
   let bodies = [...world.bodies]
   const events = world.events.map((event) => {
     if (event.triggered) return event
@@ -106,7 +105,6 @@ export function processWorldEvents(world) {
 
     if (!isTriggered || !target) return event
 
-    modified = true
     if (event.type === 'impulse') {
       const impulse = event.impulse ?? { x: 10, y: 0 }
       bodies = bodies.map((b) => b.id === target.id ? {

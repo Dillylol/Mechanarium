@@ -956,7 +956,7 @@ export default function WorldScene3D({ world, selectedId, gridSettings = { snap:
       spring.geometry.setDrawRange(0, points.length)
       positions.needsUpdate = true
       spring.geometry.computeBoundingSphere()
-      for (const [key, endpoint] of [['a', a], ['b', b]]) {
+      for (const [key] of [['a', a], ['b', b]]) {
         const handle = endpointHandlesRef.current.get(`${force.id}:${key}`)
         if (handle) {
           const pos = key === 'b' ? posB : posA

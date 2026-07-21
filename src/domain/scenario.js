@@ -121,7 +121,7 @@ export function createConnector(type = 'spring', overrides = {}) {
     restLength: overrides.restLength ?? length,
     stiffness: overrides.stiffness ?? 8,
     damping: overrides.damping ?? 0.08,
-    unattached: overrides.unattached ?? (overrides.attached === false) ?? false,
+    unattached: overrides.unattached ?? (overrides.attached === false),
     route: type === 'rope' ? overrides.route : undefined,
   }
 }

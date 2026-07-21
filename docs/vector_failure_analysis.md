@@ -1,211 +1,174 @@
-# Why Vector Fails: The Fundamental Gap
+# **Why Vector Fails: Architectural Analysis & The Fundamental Gap**
+*An Investigation into Generative LLM Spline Synthesis vs. Procedural Compiler Architecture*
 
-## The Core Thesis
-
-There are **two completely different pipelines** producing the same type of output (a spline track). One works perfectly. The other fails. The difference isn't intelligence — it's **architecture**. Vector is being asked to do something that no LLM can reliably do: generate 78+ precise floating-point numbers from a visual diagram in a single forward pass.
+> **Key Thesis**: Large Language Models are semantic reasoning engines, not numerical calculators. Forcing an LLM to generate $78+$ raw floating-point knot derivatives introduces token-level arithmetic hallucinations, whereas procedural feature compilers guarantee $C^2$ physical accuracy.
 
 ---
 
-## Pipeline A: How the Working Preset Was Built (Me)
+## **The Core Thesis**
 
-When I built the double-loop, I performed a **two-stage translation**:
+When requesting custom track geometry or double-loop roller coasters in Mechanarium, there are **two completely different pipelines** producing spline track definitions:
 
-### Stage 1: FRQ Semantics → Mathematical Model
-I read the diagram and extracted **symbolic parameters**:
-- Point A height: `6R`
-- Loop 1: ground-level, radius `R`, center at `(cx1, R)`
-- Loop 2: on a `2R` platform, radius `R`, center at `(cx2, 3R)`
-- Frictionless, captive rail, block of mass `M`
+1. **Pipeline A (Procedural Preset Engine)**: Works flawlessly every time.
+2. **Pipeline B (Direct Vector LLM JSON Generation)**: Frequently distorts, detaches riders, or fails.
 
-### Stage 2: Mathematical Model → Procedural Code
-I wrote **functions that compute geometry** — I never hand-typed a single coordinate:
+The difference is not model intelligence — it is **architectural separation of concerns**. Vector is asked to perform an operation no LLM can reliably execute: generating $78+$ raw, interdependent floating-point numbers representing positions $\vec{x}$, tangents $\vec{p}'$, and second-derivative curvature vectors $\vec{p}''$ from an FRQ image or natural-language prompt in a single forward generation pass.
+
+---
+
+## **Pipeline A: How Procedural Presets Are Constructed**
+
+When building analytical track geometry (such as the double-loop preset), the system performs a **two-stage translation**:
+
+### Stage 1: Problem Semantics $\rightarrow$ Mathematical Model
+The problem definition specifies symbolic parameters:
+- Entry height: $h = 6R$
+- Ground Loop 1: Radius $R$, centered at $(cx_1, R)$
+- Elevated Loop 2: Radius $R$, mounted on a $2R$ platform, centered at $(cx_2, 3R)$
+- Constraints: Captive friction-free rail, mass $M$
+
+### Stage 2: Mathematical Model $\rightarrow$ Procedural Generator
+Instead of hardcoding raw knot numbers, procedural functions compute analytical derivatives:
 
 ```javascript
 // circleKnot computes EXACT analytical derivatives from the parametric circle
 function circleKnot(id, center, radius, theta, span = Math.PI / 2) {
   return createSplineKnot({
     id,
-    position:        { x: center.x + radius * Math.cos(theta),
-                       y: center.y + radius * Math.sin(theta) },
-    tangent:         { x: -radius * span * Math.sin(theta),
-                       y:  radius * span * Math.cos(theta) },
-    secondDerivative:{ x: -radius * span² * Math.cos(theta),
-                       y: -radius * span² * Math.sin(theta) },
+    position: { 
+      x: center.x + radius * Math.cos(theta),
+      y: center.y + radius * Math.sin(theta) 
+    },
+    tangent: { 
+      x: -radius * span * Math.sin(theta),
+      y:  radius * span * Math.cos(theta) 
+    },
+    secondDerivative: { 
+      x: -radius * span**2 * Math.cos(theta),
+      y: -radius * span**2 * Math.sin(theta) 
+    },
   })
 }
 ```
 
-For a loop knot at θ = 0 (rightmost point), center = (-2.5, 1), R = 1:
+For a loop knot at $\theta = 0$ (rightmost point), center $= (-2.5, 1.0)$, $R = 1.0$:
 
-| Field | Formula | Result |
+| Vector Field | Analytical Formula | Exact Value |
 |---|---|---|
-| position.x | -2.5 + 1·cos(0) | **-1.5** |
-| position.y | 1 + 1·sin(0) | **1.0** |
-| tangent.x | -1·(π/2)·sin(0) | **0** |
-| tangent.y | 1·(π/2)·cos(0) | **1.5708** |
-| secondDeriv.x | -1·(π/2)²·cos(0) | **-2.4674** |
-| secondDeriv.y | -1·(π/2)²·sin(0) | **0** |
+| `position.x` | $-2.5 + 1.0 \cdot \cos(0)$ | **$-1.5$** |
+| `position.y` | $1.0 + 1.0 \cdot \sin(0)$ | **$1.0$** |
+| `tangent.x` | $-1.0 \cdot \left(\frac{\pi}{2}\right) \cdot \sin(0)$ | **$0.0$** |
+| `tangent.y` | $1.0 \cdot \left(\frac{\pi}{2}\right) \cdot \cos(0)$ | **$1.5708$** |
+| `secondDerivative.x` | $-1.0 \cdot \left(\frac{\pi}{2}\right)^2 \cdot \cos(0)$ | **$-2.4674$** |
+| `secondDerivative.y` | $-1.0 \cdot \left(\frac{\pi}{2}\right)^2 \cdot \sin(0)$ | **$0.0$** |
 
-**Every value is computed by `Math.cos()` and `Math.sin()`, not hallucinated.** The quintic Hermite spline interpolator then uses these exact tangents and second derivatives to reconstruct a perfect circle between adjacent knots.
+**Every value is derived via `Math.cos()` and `Math.sin()` in runtime JavaScript.** The quintic Hermite spline interpolator uses these exact derivative vectors to reconstruct a mathematically exact circular arc between knots.
 
 ---
 
-## Pipeline B: What Vector Actually Does
+## **Pipeline B: What Vector Is Currently Forced to Do**
 
-Vector receives the FRQ image and must output a **single JSON blob** containing every knot with all three vectors (position, tangent, secondDerivative) as raw floating-point numbers:
+Vector receives an image or text prompt and must emit a raw JSON payload containing every knot with all three vectors explicit:
 
 ```json
 {
   "type": "add_spline_track",
   "track": {
     "knots": [
-      { "id": "k0", "position": {"x": -7.5, "y": 6.0},
-        "tangent": {"x": 5.0, "y": -4.0},
-        "secondDerivative": {"x": ???, "y": ???} },
-      { "id": "k1", "position": {"x": -2.7, "y": 0.0},
-        "tangent": {"x": ???, "y": ???},
-        "secondDerivative": {"x": ???, "y": ???} },
-      // ... 11 more knots, each with 6 floats ...
+      { 
+        "id": "k0", 
+        "position": { "x": -7.5, "y": 6.0 },
+        "tangent": { "x": 5.0, "y": -4.0 },
+        "secondDerivative": { "x": 0.0, "y": 0.0 }
+      },
+      { 
+        "id": "k1", 
+        "position": { "x": -2.5, "y": 0.0 },
+        "tangent": { "x": 1.5708, "y": 0.0 },
+        "secondDerivative": { "x": 0.0, "y": 2.4674 }
+      }
+      // ... 11 additional knots, each requiring 6 floating-point values ...
     ]
   }
 }
 ```
 
-That's **13 knots × 6 values = 78 floating-point tokens** that Vector must generate *from a picture*.
+This forces the LLM to output **13 knots $\times$ 6 floating-point values = 78 interdependent floating-point tokens** in a single forward generation pass.
 
 ---
 
-## The 5 Fundamental Failure Modes
+## **The 5 Fundamental Failure Modes**
 
 ### 1. Token-Level Arithmetic Hallucination
+LLMs generate numbers token-by-token using probabilistic next-token prediction. They do not evaluate $\cos(\theta)$ or $\sin(\theta)$. When Vector outputs `tangent: { x: 0, y: 1.5708 }`, it is performing pattern matching from training data rather than evaluating derivative calculus. Minor token errors in tangent magnitudes cause severe spline distortion, producing flattened or bulged elliptical loops.
 
-LLMs generate numbers token by token. They don't compute `cos(π/2)` — they predict the most likely next token. When Vector needs to output `tangent: { x: 0, y: 1.5708 }` for the rightmost loop point, it's doing *pattern matching from training data*, not trigonometry.
+### 2. Lack of Procedural Computation Primitives
+`circleKnot()` is a procedural primitive that guarantees:
+- Tangents $\vec{p}'$ are strictly orthogonal to radial vectors $\vec{r}$.
+- Second derivatives $\vec{p}''$ point directly inward (centripetal direction).
+- Vector magnitudes scale precisely as $R \cdot \text{span}$ and $R \cdot \text{span}^2$.
 
-**What happens:** Tangent vectors are approximately right in direction but wrong in magnitude. A tangent of `{x: 0, y: 1.0}` instead of `{x: 0, y: 1.5708}` means the spline curve overshoots or undershoots, producing an ellipse instead of a circle.
+Without primitive helper functions, Vector must mental-model derivative magnitudes and output them as serialized strings, leading to numerical drift.
 
-### 2. No Procedural Computation Layer
+### 3. The Second-Derivative Centripetal Requirement
+Quintic Hermite splines require valid second-derivative vectors ($\vec{p}''$) to maintain $C^2$ curvature continuity. For a circular arc, $\vec{p}''$ must point **exactly inward toward the loop center** with magnitude $R \cdot \left(\frac{\pi}{2}\right)^2$. Incorrect second-derivative vectors introduce unexpected curvature spikes $\kappa(u)$, causing moving bodies to experience artificial normal-force spikes and detach from the track.
 
-The `circleKnot()` function is **a computational primitive** — it guarantees that for any angle θ on a circle of radius R:
-- The tangent is exactly perpendicular to the radius
-- The second derivative points exactly inward (centripetal)
-- The magnitudes are exactly scaled by `R·span` and `R·span²`
+### 4. Direct Visual-to-Float Translation Without Intermediate Representations
+Vector attempts to translate visual pixels directly to floating-point coordinates:
 
-Vector has no access to this function. It can't call `circleKnot('loop1-right', {x:-2.5, y:1}, 1, 0)`. Instead, it must mentally perform the computation and serialize the result as tokens. **This is the single biggest failure mode.**
+$$\text{FRQ Diagram Pixels} \longrightarrow \text{Raw Knot JSON (78 Floats)}$$
 
-### 3. The Second Derivative Problem
+Proper architecture requires an intermediate symbolic representation:
 
-> [!CAUTION]
-> The second derivative is the most critical and most fragile parameter.
+$$\text{FRQ Diagram} \longrightarrow \text{Symbolic Spec (e.g., Loop at } c=(-2.5,1), R=1) \longrightarrow \text{Engine Compiler } (\texttt{circleKnot}) \longrightarrow \text{Exact Spline}$$
 
-The quintic Hermite interpolation uses all three vectors (position, tangent, secondDerivative) to determine curve shape. For a circular arc, the second derivative must point **exactly inward toward the center** with magnitude `R·span²`.
+### 5. The Auto-Complete Trap
+If Vector omits tangents and relies on `autoCompleteSplineKnots()`, the engine falls back to finite-difference chordal approximations:
 
-Vector's system prompt only gives position examples for loop knots (lines 28-33 of agent.mjs):
-```
-1. Bottom Entry:  { id: 'loop-bottom-in',  position: { x: cx - 0.2, y: cy - R } }
-2. Rightmost:     { id: 'loop-right',      position: { x: cx + R,   y: cy     } }
-...
-```
+$$\vec{t}_{\text{auto}} = \frac{\vec{p}_{i+1} - \vec{p}_{i-1}}{2}$$
 
-**No tangent or second derivative examples are given.** The schema requires them (`required: ['id', 'position', 'tangent', 'secondDerivative']`), but Vector has to guess. When it guesses wrong:
-- The spline between knots isn't circular — it's a wobbly quintic curve
-- The curvature varies unpredictably, causing the rider to detach or jitter
-- The track visually looks "close" but physically breaks
+For 5 knots distributed on a circle of radius $R = 1.0$:
 
-### 4. Semantic → Coordinate Translation Without Intermediate Representation
+$$\vec{t}_{\text{auto}} = \frac{(cx, cy+R) - (cx, cy-R)}{2} = (0, R) = (0, 1.0)$$
 
-When I built the track, my mental model was:
-
-```
-FRQ diagram → { "Loop 1: center=(-2.5, 1), R=1", "Loop 2: center=(3.5, 3), R=1" }
-    → circleKnot() calls
-    → exact coordinates
-```
-
-Vector's pipeline is:
-
-```
-FRQ image pixels → raw coordinate JSON
-```
-
-There's **no intermediate symbolic representation**. Vector can't say "I need a loop of radius 1 centered at (-2.5, 1)" and have the system compute the knots. It must go straight from visual interpretation to 78 numbers.
-
-### 5. The AutoComplete Trap
-
-The `autoCompleteSplineKnots()` function (line 144-163 of spline.js) computes fallback tangents and second derivatives when none are provided. It uses a simple finite-difference formula:
-
-```javascript
-autoTangent = (nextPos - prevPos) / 2    // Catmull-Rom style
-autoSecondDeriv = prevPos + nextPos - 2·currentPos  // Central difference
-```
-
-But this is a **chord-based linear approximation** — it cannot reconstruct a circular arc from position data alone. For 5 knots around a circle, the auto-computed tangent at the rightmost point would be:
-
-```
-autoTangent = (topPos - bottomPos) / 2 = ((cx, cy+R) - (cx, cy-R)) / 2 = (0, R)
-```
-
-The correct tangent magnitude is `R·π/2 ≈ 1.5708R`, but auto gets `R = 1.0`. That's a **36% magnitude error**. The resulting spline won't be circular.
-
-So even if Vector outputs only positions and relies on autoComplete, the geometry breaks. And if Vector outputs explicit tangents/secondDerivatives, it halluccinates the values.
-
-**Vector is trapped between two bad options.**
+However, the analytically exact tangent magnitude is $R \cdot \frac{\pi}{2} \approx 1.5708R$. Using `autoCompleteSplineKnots()` introduces a **36% magnitude error**, deforming the circle into a pinched oval.
 
 ---
 
-## Side-By-Side Comparison: What Makes the Preset Perfect
+## **Comparative Summary: Preset vs. Raw LLM Generation**
 
-| Aspect | Preset (circleKnot) | Vector (raw JSON) |
-|--------|---------------------|-------------------|
-| Position accuracy | Exact: `cx + R·cos(θ)` | ~Correct (positions are easy) |
-| Tangent direction | Exact: perpendicular to radius | Approximately right |
-| Tangent magnitude | Exact: `R·π/2` | Wrong — typically `1.0` or `2.0` |
-| Second derivative direction | Exact: toward center | Often wrong or zero |
-| Second derivative magnitude | Exact: `R·(π/2)²` | Almost always wrong |
-| Circle fidelity | Perfect circle per span | Wobbly quintic approximation |
-| Physics behavior | Smooth ride through both loops | Jitter, detachment, sticking |
+| Geometric Property | Procedural Engine (`circleKnot`) | Direct LLM Output (Raw JSON) |
+|---|---|---|
+| **Knot Positions** | Exact: $cx + R\cos\theta$ | Approximately correct |
+| **Tangent Direction** | Exact: $\perp$ to radial vector | Approximately correct |
+| **Tangent Magnitude** | Exact: $R \cdot \frac{\pi}{2} \approx 1.5708 R$ | Incorrect (typically $1.0$ or $2.0$) |
+| **Second Derivative Direction** | Exact: Centripetal (toward center) | Often zero or misaligned |
+| **Second Derivative Magnitude** | Exact: $R \cdot \left(\frac{\pi}{2}\right)^2 \approx 2.4674 R$ | Almost always hallucinated |
+| **Curvature Continuity** | Guaranteed $C^2$ continuity | Discontinuous / wobbly |
+| **Physics Simulation** | Smooth ride through vertical loops | Jitter, detachment, or boundary sticking |
 
 ---
 
-## The Solution Architecture
+## **Solution Architecture: The Feature Compiler Pattern**
 
-The fix is **not** to make Vector better at arithmetic. It's to **give Vector the same computational primitives that I used**, expressed as a high-level feature language that the engine compiles into exact knots.
-
-### What Vector Should Be Able to Output:
-
-Instead of 78 raw floats, Vector should output a **feature description**:
+The solution is to equip Vector with **procedural compiler primitives**. Vector outputs a high-level semantic specification:
 
 ```json
 {
   "type": "add_spline_track",
   "track": {
     "features": [
-      { "type": "release",  "position": { "x": -7.5, "y": 6.0 } },
-      { "type": "loop",     "center": { "x": -2.5, "y": 1.0 }, "radius": 1.0 },
-      { "type": "ramp",     "from": { "x": -2.3, "y": 0.0 }, "to": { "x": 3.3, "y": 2.0 } },
-      { "type": "loop",     "center": { "x": 3.5, "y": 3.0 }, "radius": 1.0 },
-      { "type": "runout",   "position": { "x": 7.5, "y": 2.0 } }
+      { "type": "release", "position": { "x": -7.5, "y": 6.0 } },
+      { "type": "loop",    "center": { "x": -2.5, "y": 1.0 }, "radius": 1.0 },
+      { "type": "ramp",    "from": { "x": -2.3, "y": 0.0 }, "to": { "x": 3.3, "y": 2.0 } },
+      { "type": "loop",    "center": { "x": 3.5, "y": 3.0 }, "radius": 1.0 },
+      { "type": "runout",  "position": { "x": 7.5, "y": 2.0 } }
     ]
   }
 }
 ```
 
-**This is the semantic-to-coordinate translator that Vector is missing.** A feature compiler in the engine calls `circleKnot()` for loops, computes smooth transitions, and outputs the same analytically-exact knot arrays that the working preset uses.
-
-### Why This Works:
-
-1. **Vector only needs to output ~15 numbers** (feature positions, centers, radii) instead of 78
-2. **All numbers are directly readable from the diagram** — heights, centers, radii
-3. **The computational precision lives in the engine**, not in token generation
-4. **The feature language maps 1:1 to how physics students think** — "a loop of radius R at this height"
-5. **`circleKnot()` already exists** — we just need a compiler that calls it
-
----
-
-## What This Means for the Hackathon
-
-> [!IMPORTANT]  
-> The fundamental insight: **Vector doesn't fail because it's dumb. It fails because we're asking it to be a calculator.** LLMs are semantic engines, not computational ones. The architecture must separate semantic understanding (what Vector is good at) from numerical computation (what code is good at).
-
-The harness needs exactly one new component: a **Feature Compiler** that sits between Vector's JSON output and the spline engine. Vector describes *what* to build in physics terms. The compiler figures out *how* to build it with analytical precision.
-
-This is the same pattern your friend described in the text: *"allow for the AI to have a larger workspace to code a better system that accurately represents the problem."* The "larger workspace" isn't more tokens or more reasoning — it's **computational tools that do the math for it**.
+### Why This Architecture Succeeds:
+1. **Reduces Output Complexity**: Vector outputs $\sim 12$ high-level parameters instead of 78 floating-point numbers.
+2. **Separates Reasoning from Computation**: LLM performs semantic parsing; deterministic JavaScript engine executes trigonometry.
+3. **Guarantees $C^2$ Physics Accuracy**: The engine calls `circleKnot()` internally, ensuring analytical precision and zero rider detachment.

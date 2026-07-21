@@ -28,7 +28,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .mechanarium-app { height: 100vh; min-height: 620px; display: grid; grid-template-rows: 54px 1fr; background: var(--paper); }
 .app-bar { display: grid; grid-template-columns: 238px minmax(180px, 1fr) auto auto; align-items: center; border-bottom: 2px solid var(--black); background: var(--white); z-index: 20; }
 .wordmark { height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 14px; color: var(--black); border-right: 1px solid var(--black); text-decoration: none; }
-.wordmark > span { width: 30px; height: 30px; display: grid; place-items: center; color: #fff; background: #111; font: 800 14px/1 ui-monospace, monospace; }
+.wordmark-title { display: flex; align-items: center; color: var(--black); text-decoration: none; }
+.wordmark-m-btn { width: 30px; height: 30px; display: grid; place-items: center; color: #fff; background: #111; font: 800 14px/1 ui-monospace, monospace; border: 0; border-radius: 4px; cursor: pointer; transition: transform 0.15s ease, background 0.15s ease; }
+.wordmark-m-btn:hover { background: #2563eb; color: #fff; transform: scale(1.05); }
 .wordmark strong { font: 800 12px/1 ui-monospace, monospace; letter-spacing: .17em; }
 .scenario-identity { min-width: 0; padding: 0 16px; }
 .scenario-identity small, .scenario-identity strong { display: block; }
@@ -275,3 +277,92 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* Easter Egg Modal Overlay */
+.easter-egg-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  animation: fadeIn 0.2s ease-out;
+}
+.easter-egg-modal {
+  position: relative;
+  width: 90%;
+  max-width: 480px;
+  padding: 36px 32px 30px 32px;
+  background: #e5e7eb;
+  color: #111827;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35), 0 0 35px rgba(37, 99, 235, 0.4);
+  text-align: center;
+  animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.easter-egg-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.08);
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.easter-egg-close:hover {
+  background: #2563eb;
+  color: #fff;
+  transform: scale(1.05);
+}
+.easter-egg-badge {
+  display: inline-block;
+  font: 800 10px ui-monospace, monospace;
+  letter-spacing: 0.16em;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin-bottom: 22px;
+  border: 1px solid rgba(37, 99, 235, 0.4);
+}
+.easter-egg-quote {
+  margin: 0;
+  padding: 0;
+}
+.easter-egg-salutation {
+  font-size: 21px;
+  font-weight: 800;
+  color: #111827;
+  margin: 0 0 12px 0;
+  letter-spacing: -0.01em;
+}
+.easter-egg-main {
+  font-size: 15px;
+  line-height: 1.55;
+  color: #374151;
+  font-style: italic;
+  margin: 0;
+}
+.easter-egg-divider {
+  width: 64px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #2563eb, transparent);
+  margin: 22px auto;
+}
+.easter-egg-thanks {
+  font: 600 13px ui-monospace, monospace;
+  color: #4b5563;
+  margin: 0;
+}

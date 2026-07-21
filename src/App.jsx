@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Magnet, Pause, Play, Redo2, Rewind, RotateCcw, Save, SkipForward, Undo2, Upload } from 'lucide-react'
+import { Download, Magnet, Pause, Play, Redo2, Rewind, RotateCcw, Save, SkipForward, Undo2, Upload, X } from 'lucide-react'
 import AgentDock from './components/AgentDock.jsx'
 import BuilderRail from './components/BuilderRail.jsx'
 import DataRail from './components/DataRail.jsx'
@@ -181,6 +181,8 @@ export default function App() {
     }
   }
 
+  const [easterEggOpen, setEasterEggOpen] = useState(false)
+
   const toggleRun = () => {
     const accepted = simulation.setRunning(!simulation.running)
     if (accepted === false) setNotice(world.diagnostics.join(' '))
@@ -189,7 +191,19 @@ export default function App() {
   return (
     <div className="mechanarium-app">
       <header className="app-bar">
-        <a className="wordmark" href="#world" aria-label="Mechanarium home"><span>M</span><strong>MECHANARIUM</strong></a>
+        <div className="wordmark">
+          <button
+            type="button"
+            className="wordmark-m-btn"
+            onClick={() => setEasterEggOpen(true)}
+            aria-label="Mechanarium Dedication Easter Egg"
+          >
+            M
+          </button>
+          <a href="#world" className="wordmark-title" aria-label="Mechanarium home">
+            <strong>MECHANARIUM</strong>
+          </a>
+        </div>
         <div className="scenario-identity"><small>ACTIVE WORLD</small><strong>{world.name}</strong></div>
         <div className="run-controls" aria-label="Simulation controls">
           <button className="run-button" type="button" onClick={toggleRun}>{simulation.running ? <Pause size={16} /> : <Play size={16} />}<span>{simulation.running ? 'Pause' : 'Run'}</span></button>
@@ -322,6 +336,23 @@ export default function App() {
         />
       </main>
       <div className="app-notice" role="status" aria-live="polite">{notice}</div>
+
+      {easterEggOpen && (
+        <div className="easter-egg-backdrop" onClick={() => setEasterEggOpen(false)} role="dialog" aria-modal="true" aria-label="Dedication Easter Egg">
+          <div className="easter-egg-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="easter-egg-close" type="button" onClick={() => setEasterEggOpen(false)} aria-label="Close modal">
+              <X size={18} />
+            </button>
+            <div className="easter-egg-badge">MECHANARIUM DEDICATION</div>
+            <blockquote className="easter-egg-quote">
+              <p className="easter-egg-salutation">Dedicated to Mr. Botello,</p>
+              <p className="easter-egg-main">For teaching me real physics before any AI could vibecode it.</p>
+            </blockquote>
+            <div className="easter-egg-divider" />
+            <p className="easter-egg-thanks">Special thanks to DoD for testing out my AI slop.</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

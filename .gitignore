@@ -34,8 +34,11 @@ APPhysics1FRQ2026/
 frq-extract.txt
 scripts/extract-frq.py
 
-# Demo prep (local only — scripts, screenshots, plans)
-demo/
+# Demo prep (local screenshots only — markdown scripts are public)
+demo/*.png
+demo/*.jpg
+demo/*.jpeg
+demo/*.webp
 
 # Probe/debug scripts and output (local dev only)
 scripts/probe-agent.mjs

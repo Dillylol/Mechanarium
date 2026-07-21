@@ -151,6 +151,7 @@ export function useSimulation(initialPreset = 'projectile-motion', gridSettings 
   const [dragSnapCandidate, setDragSnapCandidate] = useState(null)
   const [running, setRunningState] = useState(false)
   const [reversing, setReversingState] = useState(false)
+  const [snapshotCount, setSnapshotCount] = useState(0)
   const [runError, setRunError] = useState('')
   const [speed, setSpeed] = useState(1)
   const [history, setHistory] = useState([])
@@ -185,6 +186,7 @@ export function useSimulation(initialPreset = 'projectile-motion', gridSettings 
     if (samples.length) setHistory((current) => [...current, ...samples].slice(-HISTORY_LIMIT))
     worldSnapshotsRef.current.push(nextWorld)
     if (worldSnapshotsRef.current.length > 6000) worldSnapshotsRef.current.shift()
+    setSnapshotCount(worldSnapshotsRef.current.length)
   }, [])
 
   const setTrialStatus = useCallback((status) => {
@@ -283,6 +285,7 @@ export function useSimulation(initialPreset = 'projectile-motion', gridSettings 
           setWorld(prevWorld)
           const bodyCount = Math.max(1, prevWorld.bodies?.length ?? 1)
           setHistory((current) => current.slice(0, -bodyCount))
+          setSnapshotCount(worldSnapshotsRef.current.length)
         }
         if (!prevWorld || prevWorld.time <= 0.001 || worldSnapshotsRef.current.length === 0) {
           setReversingState(false)
@@ -313,6 +316,7 @@ export function useSimulation(initialPreset = 'projectile-motion', gridSettings 
     gateStateRef.current = {}
     trialDraftRef.current = null
     worldSnapshotsRef.current = []
+    setSnapshotCount(0)
     setPendingTrial(null)
     setTrialStatus('idle')
     setNotebook((current) => current.scenarioId === scenario.id ? current : loadNotebook(scenario.id))
@@ -843,7 +847,6 @@ export function useSimulation(initialPreset = 'projectile-motion', gridSettings 
       if (action.type === 'add_body') {
         commitScenarioEdit((scenario) => {
           const isBox = action.target === 'box'
-          const shape = 'circle'
           const radius = 0.28
           if (scenario.bodies.length > 0) {
             const body = scenario.bodies[0]
@@ -975,7 +978,7 @@ export function useSimulation(initialPreset = 'projectile-motion', gridSettings 
 
   return {
     world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedLoadState, eligibleWheels, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback, dragSnapCandidate,
-    running, setRunning, reversing, canReverse: Boolean(reversing || (world.time > 0.001 && worldSnapshotsRef.current.length > 0)), toggleReverse, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
+    running, setRunning, reversing, canReverse: Boolean(reversing || (world.time > 0.001 && snapshotCount > 0)), toggleReverse, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
     recordingStatus, pendingTrial, notebook, armTrial, discardTrial, savePendingTrial, deleteTrial,
     canUndo: undoStack.length > 0, canRedo: redoStack.length > 0, undo, redo,
     updateBody, updateTrack, updateConnector, routeConnector, updateInstrument, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,

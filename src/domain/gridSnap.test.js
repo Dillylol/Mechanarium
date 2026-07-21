@@ -6,7 +6,7 @@ describe('gridSnap utility', () => {
     expect(snapToGrid({ x: 1.24, y: 3.76 }, 0.5)).toEqual({ x: 1.0, y: 4.0 })
     expect(snapToGrid({ x: 1.12, y: 3.88 }, 0.25)).toEqual({ x: 1.0, y: 4.0 })
     expect(snapToGrid({ x: 1.18, y: 3.88 }, 0.25)).toEqual({ x: 1.25, y: 4.0 })
-    expect(snapToGrid({ x: -2.31, y: -0.49 }, 1.0)).toEqual({ x: -2.0, y: -0.5 ? -0 : -0.0 })
+    expect(snapToGrid({ x: -2.31, y: -0.51 }, 1.0)).toEqual({ x: -2.0, y: -1.0 })
     expect(snapToGrid({ x: 0.12, y: 0.88 }, 0.1)).toEqual({ x: 0.1, y: 0.9 })
   })
 
