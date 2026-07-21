@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getPreset } from '../src/domain/presets.js'
-import { validateAgentInput, validateWorldActions } from './agentPolicy.mjs'
+import { validateAgentInput, validateWorldActions, normalizeAgentHistory } from './agentPolicy.mjs'
 
 describe('Vector server policy', () => {
   it('accepts bounded requests and supported world actions', () => {
@@ -16,6 +16,14 @@ describe('Vector server policy', () => {
     const history = Array.from({ length: 7 }, () => ({ role: 'user', content: 'hello' }))
     expect(() => validateAgentInput({ message: 'Hello', scenario, telemetry: {}, history })).toThrow(/six messages/i)
     expect(() => validateWorldActions([{ type: 'add_body', target: 'central' }], scenario)).toThrow(/invalid target/i)
+  })
+
+  it('truncates long conversation history instead of rejecting the request', () => {
+    const scenario = getPreset('projectile-motion')
+    const long = 'x'.repeat(2_000)
+    const normalized = normalizeAgentHistory([{ role: 'user', content: long }])
+    expect(normalized).toEqual([{ role: 'user', content: 'x'.repeat(1_000) }])
+    expect(validateAgentInput({ message: 'Hello', scenario, telemetry: {}, history: [{ role: 'user', content: long }] }).history[0].content).toHaveLength(1_000)
   })
 
   it('requires exact entity and port references for joints', () => {

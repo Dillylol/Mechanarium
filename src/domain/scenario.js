@@ -240,7 +240,7 @@ function normalizeV4(input) {
   scenario.instruments ??= []
   scenario.railJoins ??= []
   scenario.forces ??= []
-  scenario.constraints ??= []
+  scenario.constraints ??= [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }]
   scenario.events ??= []
   scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
   scenario.tracks = scenario.tracks.map((track) => createTrack(track))

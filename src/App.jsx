@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Download, Pause, Play, Redo2, Rewind, RotateCcw, Save, SkipForward, Undo2, Upload } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Download, Magnet, Pause, Play, Redo2, Rewind, RotateCcw, Save, SkipForward, Undo2, Upload } from 'lucide-react'
 import AgentDock from './components/AgentDock.jsx'
 import BuilderRail from './components/BuilderRail.jsx'
 import DataRail from './components/DataRail.jsx'
@@ -12,6 +12,7 @@ import { useTutorials } from './hooks/useTutorials.js'
 
 const WORLD_SAVES_KEY = 'mechanarium:world-saves:v1'
 const LAST_WORLD_KEY = 'mechanarium:last-scenario'
+const GRID_SETTINGS_KEY = 'mechanarium:grid-settings:v1'
 
 function loadInitialScenario() {
   try {
@@ -31,15 +32,55 @@ function loadSavedWorlds() {
   }
 }
 
+function loadGridSettings() {
+  try {
+    const stored = localStorage.getItem(GRID_SETTINGS_KEY)
+    const parsed = stored ? JSON.parse(stored) : null
+    if (parsed && typeof parsed.snap === 'boolean' && typeof parsed.step === 'number') return parsed
+  } catch { /* use default */ }
+  return { snap: true, step: 0.5, planeGrid: true, showFloorGrid: true }
+}
+
 export default function App() {
-  const simulation = useSimulation(loadInitialScenario)
+  const [gridSettings, setGridSettings] = useState(loadGridSettings)
   const [overlays, setOverlays] = useState({ grid: true, dimensions: true, height: true, net: true, components: true, torque: true, trails: false })
+
+  const effectiveGridSettings = useMemo(() => ({
+    ...gridSettings,
+    snap: Boolean(gridSettings.snap && overlays.grid),
+  }), [gridSettings, overlays.grid])
+
+  const simulation = useSimulation(loadInitialScenario, effectiveGridSettings)
   const [notice, setNotice] = useState('World ready')
   const [savedWorlds, setSavedWorlds] = useState(loadSavedWorlds)
   const fileInputRef = useRef(null)
   const presets = listPresets()
   const { world, selectedBody, selectedEntity, running, selectedId, removeEntity } = simulation
   const tutorials = useTutorials({ world, notebook: simulation.notebook, history: simulation.history })
+
+  const toggleOverlay = (name) => {
+    setOverlays((current) => {
+      const next = { ...current, [name]: !current[name] }
+      if (name === 'grid' && !next.grid) {
+        setGridSettings((prev) => ({ ...prev, snap: false }))
+      }
+      return next
+    })
+  }
+
+  const toggleSnap = () => {
+    setGridSettings((prev) => {
+      const nextSnap = !prev.snap
+      if (nextSnap && !overlays.grid) {
+        setOverlays((current) => ({ ...current, grid: true }))
+      }
+      return { ...prev, snap: nextSnap }
+    })
+  }
+
+  useEffect(() => {
+    try { localStorage.setItem(GRID_SETTINGS_KEY, JSON.stringify(gridSettings)) } catch { /* persistence is optional */ }
+  }, [gridSettings])
 
   useEffect(() => {
     try { localStorage.setItem(WORLD_SAVES_KEY, JSON.stringify(savedWorlds)) } catch { /* persistence is optional */ }
@@ -140,7 +181,6 @@ export default function App() {
     }
   }
 
-  const toggleOverlay = (name) => setOverlays((current) => ({ ...current, [name]: !current[name] }))
   const toggleRun = () => {
     const accepted = simulation.setRunning(!simulation.running)
     if (accepted === false) setNotice(world.diagnostics.join(' '))
@@ -174,7 +214,28 @@ export default function App() {
         <section id="world" className="world-stage" aria-labelledby="world-title">
           <div className="stage-bar">
             <div><p className="micro-label">{presets.find((preset) => preset.id === world.scenarioId)?.category ?? 'Custom system'}</p><h2 id="world-title">{world.name}</h2></div>
-            <div className="view-options" aria-label="World overlays">
+            <div className="view-options" aria-label="World overlays & snap grid">
+              <button
+                type="button"
+                className={`grid-snap-btn${effectiveGridSettings.snap ? ' active' : ''}`}
+                onClick={toggleSnap}
+                title={effectiveGridSettings.snap ? 'Grid Snap ON (Click to disable)' : 'Grid Snap OFF (Click to enable)'}
+              >
+                <Magnet size={12} />
+                <span>SNAP</span>
+              </button>
+              <label className="grid-step-select-label" title="Grid snap density / step size">
+                <select
+                  className="grid-step-select"
+                  value={gridSettings.step}
+                  onChange={(event) => setGridSettings((prev) => ({ ...prev, step: Number(event.target.value) }))}
+                >
+                  <option value={0.1}>0.1m</option>
+                  <option value={0.25}>0.25m</option>
+                  <option value={0.5}>0.5m</option>
+                  <option value={1.0}>1.0m</option>
+                </select>
+              </label>
               {Object.entries(overlays).map(([name, enabled]) => <label key={name}><input type="checkbox" checked={enabled} onChange={() => toggleOverlay(name)} /><span>{name === 'height' ? 'h indicator' : name}</span></label>)}
             </div>
           </div>
@@ -182,6 +243,7 @@ export default function App() {
             <WorldScene3D
               world={world}
               selectedId={simulation.selectedId}
+              gridSettings={effectiveGridSettings}
               onSelect={simulation.setSelectedId}
               onMove={moveBody}
               onRequestBodySnap={simulation.requestBodySnap}

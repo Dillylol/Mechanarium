@@ -9,6 +9,7 @@ import { bodyLoadState, connectorState, resolveEndpoint, resolvePort, wheelCente
 import { bodyEnergy } from '../physics/metrics.js'
 import { magnitude } from '../physics/vector.js'
 import { createWorld, stepWorld, worldToScenario } from '../physics/world.js'
+import { snapToGrid } from '../domain/gridSnap.js'
 
 const HISTORY_LIMIT = 4800
 const UI_PUBLISH_INTERVAL_MS = 1000 / 30
@@ -136,7 +137,7 @@ function sampleWorld(world, bodyId) {
   }
 }
 
-export function useSimulation(initialPreset = 'projectile-motion') {
+export function useSimulation(initialPreset = 'projectile-motion', gridSettings = { snap: false, step: 0.5 }) {
   const [initial] = useState(() => {
     const supplied = typeof initialPreset === 'function' ? initialPreset() : initialPreset
     return typeof supplied === 'string' ? getPreset(supplied) : supplied
@@ -482,18 +483,20 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   }, [updateConnector])
 
   const moveConnectorEndpoint = useCallback((connectorId, key, position) => {
-    updateConnector(connectorId, { [key]: { type: 'world', position } })
-  }, [updateConnector])
+    const targetPos = gridSettings?.snap ? snapToGrid(position, gridSettings.step) : position
+    updateConnector(connectorId, { [key]: { type: 'world', position: targetPos } })
+  }, [gridSettings, updateConnector])
 
   const moveAssemblyPart = useCallback((bodyId, position, snapRadius = 0.45) => {
     const candidate = findBodySnapCandidate(worldRef.current, bodyId, position, snapRadius)
-    updateBody(bodyId, { position: candidate?.alignedPosition ?? position, ...(Number.isFinite(candidate?.alignedAngle) ? { angle: candidate.alignedAngle } : {}) })
+    const targetPos = candidate?.alignedPosition ?? (gridSettings?.snap ? snapToGrid(position, gridSettings.step) : position)
+    updateBody(bodyId, { position: targetPos, ...(Number.isFinite(candidate?.alignedAngle) ? { angle: candidate.alignedAngle } : {}) })
     setDragSnapCandidate((current) => {
       if (!candidate) return null
       if (current?.bodyId === candidate.bodyId && current.sourcePortId === candidate.sourcePortId && current.targetPortId === candidate.targetPortId) return current
       return candidate
     })
-  }, [updateBody])
+  }, [gridSettings, updateBody])
 
   const requestBodySnap = useCallback((bodyId, snapRadius = 0.45) => {
     const body = worldRef.current.bodies.find((candidate) => candidate.id === bodyId)
@@ -717,18 +720,19 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   }, [commitScenarioEdit])
 
   const moveEntity = useCallback((id, position) => {
-    if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position })
+    const targetPos = gridSettings?.snap ? snapToGrid(position, gridSettings.step) : position
+    if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position: targetPos })
     else if (worldRef.current.tracks.some((track) => track.id === id)) {
       const track = worldRef.current.tracks.find((candidate) => candidate.id === id)
       if (track.type === 'spline') {
         const samples = track._samples ?? sampleSpline(track)
         const center = samples.reduce((sum, sample) => ({ x: sum.x + sample.position.x / samples.length, y: sum.y + sample.position.y / samples.length }), { x: 0, y: 0 })
-        updateTrack(id, { knots: track.knots.map((knot) => ({ ...knot, position: { x: knot.position.x + position.x - center.x, y: knot.position.y + position.y - center.y } })) })
-      } else updateTrack(id, { center: position })
+        updateTrack(id, { knots: track.knots.map((knot) => ({ ...knot, position: { x: knot.position.x + targetPos.x - center.x, y: knot.position.y + targetPos.y - center.y } })) })
+      } else updateTrack(id, { center: targetPos })
     }
-    else if (worldRef.current.forces.some((force) => force.id === id && force.type === 'central')) updateForce(id, { center: position })
-    else if (worldRef.current.instruments.some((instrument) => instrument.id === id && instrument.type === 'photogate')) updateInstrument(id, { center: position })
-  }, [updateBody, updateForce, updateInstrument, updateTrack])
+    else if (worldRef.current.forces.some((force) => force.id === id && force.type === 'central')) updateForce(id, { center: targetPos })
+    else if (worldRef.current.instruments.some((instrument) => instrument.id === id && instrument.type === 'photogate')) updateInstrument(id, { center: targetPos })
+  }, [gridSettings, updateBody, updateForce, updateInstrument, updateTrack])
 
   const alignInstrument = useCallback((instrumentId, radius = 0.6) => {
     const instrument = worldRef.current.instruments.find((candidate) => candidate.id === instrumentId)

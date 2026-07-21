@@ -6,7 +6,7 @@ const port = Number(process.env.PORT ?? process.env.AGENT_PORT ?? 8787)
 const model = process.env.OPENAI_MODEL ?? 'gpt-5.6-luna'
 const reasoningEffort = process.env.OPENAI_REASONING_EFFORT ?? 'medium'
 const rateLimit = Number(process.env.AGENT_RATE_LIMIT ?? 20)
-const timeoutMs = Number(process.env.AGENT_TIMEOUT_MS ?? 25_000)
+const timeoutMs = Number(process.env.AGENT_TIMEOUT_MS ?? 60_000)
 const allowedOrigins = new Set((process.env.AGENT_ALLOWED_ORIGINS ?? 'http://127.0.0.1:5173,http://localhost:5173,https://dillylol.github.io').split(',').map((origin) => origin.trim()).filter(Boolean))
 const requestsByClient = new Map()
 

@@ -43,7 +43,13 @@ export default function AgentDock({ scenario, world, selectedEntity, selectedBod
   const [conversation, setConversation] = useState(() => {
     try {
       const saved = localStorage.getItem('mechanarium_agent_conversation')
-      return saved ? JSON.parse(saved) : []
+      const parsed = saved ? JSON.parse(saved) : []
+      return parsed.flatMap((item) => {
+        const role = item?.role === 'assistant' ? 'assistant' : item?.role === 'user' ? 'user' : null
+        if (!role) return []
+        const content = typeof item?.content === 'string' ? item.content.trim().slice(0, 1_000) : ''
+        return content ? [{ role, content, image: item?.image ?? null }] : []
+      }).slice(-16)
     } catch {
       return []
     }
@@ -166,8 +172,8 @@ export default function AgentDock({ scenario, world, selectedEntity, selectedBod
       setSource(result.source)
       setConversation((current) => [
         ...current,
-        { role: 'user', content: message || '[Attached Diagram]', image: sendingImage },
-        { role: 'assistant', content: result.message },
+        { role: 'user', content: (message || '[Attached Diagram]').slice(0, 1_000), image: sendingImage },
+        { role: 'assistant', content: result.message.slice(0, 1_000) },
       ].slice(-16))
     } catch (error) {
       setReply(`I could not apply that assembly: ${error.message}`)

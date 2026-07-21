@@ -5,6 +5,54 @@ import { bodyLoadState, resolveEndpoint, wheelRouteGeometry } from '../physics/a
 import { sampleSpline } from '../domain/spline.js'
 import { rulerReading } from '../domain/instruments.js'
 import { bodyEnergy } from '../physics/metrics.js'
+import { snapToGrid } from '../domain/gridSnap.js'
+
+function createPlaneGridGroup(sizeX = 36, sizeY = 28, step = 0.5) {
+  const group = new THREE.Group()
+  const minorPositions = []
+  const majorPositions = []
+
+  const halfX = sizeX / 2
+  const halfY = sizeY / 2
+
+  const majorStep = step <= 0.25 ? 1.0 : (step <= 0.5 ? 1.0 : 2.0)
+
+  for (let x = -halfX; x <= halfX + 1e-5; x += step) {
+    const roundX = Math.round(x / step) * step
+    const isMajor = Math.abs(roundX % majorStep) < 1e-4
+    const target = isMajor ? majorPositions : minorPositions
+    target.push(roundX, -halfY, -0.01, roundX, halfY, -0.01)
+  }
+
+  for (let y = -halfY; y <= halfY + 1e-5; y += step) {
+    const roundY = Math.round(y / step) * step
+    const isMajor = Math.abs(roundY % majorStep) < 1e-4
+    const target = isMajor ? majorPositions : minorPositions
+    target.push(-halfX, roundY, -0.01, halfX, roundY, -0.01)
+  }
+
+  if (minorPositions.length > 0) {
+    const minorGeo = new THREE.BufferGeometry()
+    minorGeo.setAttribute('position', new THREE.Float32BufferAttribute(minorPositions, 3))
+    const minorMat = new THREE.LineBasicMaterial({ color: 0x999990, transparent: true, opacity: 0.16 })
+    group.add(new THREE.LineSegments(minorGeo, minorMat))
+  }
+
+  if (majorPositions.length > 0) {
+    const majorGeo = new THREE.BufferGeometry()
+    majorGeo.setAttribute('position', new THREE.Float32BufferAttribute(majorPositions, 3))
+    const majorMat = new THREE.LineBasicMaterial({ color: 0x555550, transparent: true, opacity: 0.32 })
+    group.add(new THREE.LineSegments(majorGeo, majorMat))
+  }
+
+  const axesPositions = [-halfX, 0, -0.008, halfX, 0, -0.008, 0, -halfY, -0.008, 0, halfY, -0.008]
+  const axesGeo = new THREE.BufferGeometry()
+  axesGeo.setAttribute('position', new THREE.Float32BufferAttribute(axesPositions, 3))
+  const axesMat = new THREE.LineBasicMaterial({ color: 0x222220, transparent: true, opacity: 0.45 })
+  group.add(new THREE.LineSegments(axesGeo, axesMat))
+
+  return group
+}
 
 function disposeObject(object) {
   object.traverse((child) => {
@@ -145,18 +193,18 @@ function updateTextSprite(sprite, text, color) {
 function addTransformGizmos(group, entity, center) {
   const tangent = { x: Math.cos(entity.angle), y: Math.sin(entity.angle) }
   const angleHandle = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.055, 10, 24), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
-  angleHandle.position.set(center.x + tangent.x * (entity.length / 2 + 0.65), center.y + tangent.y * (entity.length / 2 + 0.65), 0.15)
+  angleHandle.position.set(center.x + tangent.x * (entity.length / 2 + 0.65), center.y + tangent.y * (entity.length / 2 + 0.65), 0.03)
   angleHandle.userData = { entityId: entity.id, id: entity.id, gizmo: 'angle', center }
   group.add(angleHandle)
   for (const sign of [-1, 1]) {
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.35, 0.24), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
-    handle.position.set(center.x + tangent.x * entity.length / 2 * sign, center.y + tangent.y * entity.length / 2 * sign, 0.18)
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.35, 0.06), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
+    handle.position.set(center.x + tangent.x * entity.length / 2 * sign, center.y + tangent.y * entity.length / 2 * sign, 0.03)
     handle.rotation.z = entity.angle
     handle.userData = { entityId: entity.id, id: entity.id, gizmo: 'length', center }
     group.add(handle)
   }
   const start = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.36, 16), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
-  start.position.set(center.x - tangent.x * entity.length / 2, center.y - tangent.y * entity.length / 2 + 0.35, 0.16)
+  start.position.set(center.x - tangent.x * entity.length / 2, center.y - tangent.y * entity.length / 2 + 0.35, 0.03)
   start.userData = { entityId: entity.id }
   group.add(start)
 }
@@ -164,17 +212,17 @@ function addTransformGizmos(group, entity, center) {
 function addSplineGizmos(group, track) {
   for (const knot of track.knots) {
     const knotHandle = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 10), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
-    knotHandle.position.set(knot.position.x, knot.position.y, 0.22)
+    knotHandle.position.set(knot.position.x, knot.position.y, 0.03)
     knotHandle.userData = { entityId: track.id, id: track.id, gizmo: 'spline-knot', knotId: knot.id, center: knot.position }
     group.add(knotHandle)
     const tangentPosition = { x: knot.position.x + knot.tangent.x * 0.28, y: knot.position.y + knot.tangent.y * 0.28 }
     const guide = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(knot.position.x, knot.position.y, 0.18),
-      new THREE.Vector3(tangentPosition.x, tangentPosition.y, 0.18),
+      new THREE.Vector3(knot.position.x, knot.position.y, 0.025),
+      new THREE.Vector3(tangentPosition.x, tangentPosition.y, 0.025),
     ]), new THREE.LineBasicMaterial({ color: 0xf2cf00, transparent: true, opacity: 0.65 }))
     group.add(guide)
-    const tangentHandle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
-    tangentHandle.position.set(tangentPosition.x, tangentPosition.y, 0.22)
+    const tangentHandle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.06), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
+    tangentHandle.position.set(tangentPosition.x, tangentPosition.y, 0.03)
     tangentHandle.userData = { entityId: track.id, id: track.id, gizmo: 'spline-tangent', knotId: knot.id, center: knot.position }
     group.add(tangentHandle)
   }
@@ -194,7 +242,7 @@ function railEndpointPosition(world, endpoint) {
   }
 }
 
-export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal, dragSnapCandidate }) {
+export default function WorldScene3D({ world, selectedId, gridSettings = { snap: true, step: 0.5, planeGrid: true }, onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal, dragSnapCandidate }) {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
   const cameraRef = useRef(null)
@@ -210,6 +258,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
   const trailRef = useRef(null)
   const dimensionOverlayRef = useRef(null)
   const gridRef = useRef(null)
+  const planeGridRef = useRef(null)
   const [draggedPartId, setDraggedPartId] = useState(null)
   const handlersRef = useRef({ onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running })
   const worldStateRef = useRef(world)
@@ -416,7 +465,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         if (draggingGizmo) {
           if (draggingGizmo.gizmo === 'spline-knot') {
             const track = worldStateRef.current.tracks.find((candidate) => candidate.id === draggingGizmo.id)
-            if (track?.type === 'spline') handlersRef.current.onTransform(track.id, { knots: track.knots.map((knot) => knot.id === draggingGizmo.knotId ? { ...knot, position: { x: intersection.x, y: intersection.y } } : knot) })
+            const targetPos = gridSettings?.snap ? snapToGrid({ x: intersection.x, y: intersection.y }, gridSettings.step) : { x: intersection.x, y: intersection.y }
+            if (track?.type === 'spline') handlersRef.current.onTransform(track.id, { knots: track.knots.map((knot) => knot.id === draggingGizmo.knotId ? { ...knot, position: targetPos } : knot) })
             return
           }
           if (draggingGizmo.gizmo === 'spline-tangent') {
@@ -478,11 +528,11 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
           const posX = selectedMesh.position.x
           const posY = selectedMesh.position.y
           const positions = dimension.geometry.attributes.position
-          positions.setXYZ(0, posX, 0, 0.34)
-          positions.setXYZ(1, posX, posY, 0.34)
+          positions.setXYZ(0, posX, 0, 0.02)
+          positions.setXYZ(1, posX, posY, 0.02)
           positions.needsUpdate = true
           dimension.computeLineDistances()
-          label.position.set(posX + 1.7, posY / 2, 0.6)
+          label.position.set(posX + 1.7, posY / 2, 0.04)
           const liveBody = worldStateRef.current.bodies.find((b) => b.id === bodyId)
           if (liveBody) {
             const energy = bodyEnergy({ ...liveBody, position: { x: posX, y: posY } }, worldStateRef.current.gravity, 0)
@@ -520,17 +570,40 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       endpointHandles.clear()
       trailRef.current = null
       gridRef.current = null
+      if (planeGridRef.current) {
+        disposeObject(planeGridRef.current)
+        planeGridRef.current = null
+      }
     }
   }, [])
 
   useEffect(() => {
     if (!gridRef.current) return
     const ground = world.constraints.find((constraint) => constraint.type === 'ground')
-    gridRef.current.visible = overlays.grid
-    gridRef.current.position.y = ground?.y ?? -3.6
+    gridRef.current.visible = Boolean(ground) && (gridSettings?.showFloorGrid !== false)
+    if (ground) {
+      gridRef.current.position.y = ground.y
+    }
     gridRef.current.material.transparent = true
-    gridRef.current.material.opacity = ground ? 1 : 0.22
-  }, [overlays.grid, world.constraints])
+    gridRef.current.material.opacity = 1
+  }, [gridSettings?.showFloorGrid, world.constraints])
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    if (planeGridRef.current) {
+      scene.remove(planeGridRef.current)
+      disposeObject(planeGridRef.current)
+      planeGridRef.current = null
+    }
+    const isVisible = overlays.grid && (gridSettings?.planeGrid !== false)
+    if (isVisible) {
+      const step = gridSettings?.step || 0.5
+      const planeGrid = createPlaneGridGroup(36, 28, step)
+      scene.add(planeGrid)
+      planeGridRef.current = planeGrid
+    }
+  }, [gridSettings?.planeGrid, gridSettings?.step, overlays.grid])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -682,7 +755,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       const point = railEndpointPosition(renderWorld, join.a)
       if (!point) continue
       const weld = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.045, 10, 28), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
-      weld.position.set(point.x, point.y, 0.3)
+      weld.position.set(point.x, point.y, 0.03)
       weld.userData.entityId = join.a.ownerId
       group.add(weld)
     }
@@ -700,7 +773,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         const other = resolveEndpoint(renderWorld, force.b)
         for (const [key, endpoint] of [['a', state], ['b', other]]) if (endpoint && !running) {
           const handle = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 10), new THREE.MeshBasicMaterial({ color: endpoint.owner ? 0x00a965 : 0xf2cf00 }))
-          handle.position.set(endpoint.position.x, endpoint.position.y, 0.08)
+          handle.position.set(endpoint.position.x, endpoint.position.y, 0.03)
           handle.userData = { connectorId: force.id, endpoint: key }
           forceGroup.add(handle)
           endpointHandlesRef.current.set(`${force.id}:${key}`, handle)
@@ -709,8 +782,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     }
     for (const force of renderWorld.forces) {
       if (force.type === 'central') {
-        const core = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshStandardMaterial({ color: 0x009fe3, roughness: 0.35, emissive: force.id === selectedId ? 0x12475a : 0x000000 }))
-        core.position.set(force.center.x, force.center.y, 0)
+        const core = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.2), new THREE.MeshStandardMaterial({ color: 0x009fe3, roughness: 0.35, emissive: force.id === selectedId ? 0x12475a : 0x000000 }))
+        core.position.set(force.center.x, force.center.y, 0.02)
         core.castShadow = true
         core.userData = { forceId: force.id, center: force.center }
         forceGroup.add(core)
@@ -720,9 +793,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       const selected = instrument.id === selectedId
       if (instrument.type === 'ruler') {
         const center = { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 }
-        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(instrument.a.x, instrument.a.y, 0.2), new THREE.Vector3(instrument.b.x, instrument.b.y, 0.2)])
+        const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(instrument.a.x, instrument.a.y, 0.02), new THREE.Vector3(instrument.b.x, instrument.b.y, 0.02)])
         const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x111111 }))
-        line.userData = { instrumentId: instrument.id, center }
         forceGroup.add(line)
         const reading = rulerReading(instrument)
         const tangentLength = reading.distance || 1
@@ -733,30 +805,35 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
           const fraction = index / tickCount
           const point = { x: instrument.a.x + reading.dx * fraction, y: instrument.a.y + reading.dy * fraction }
           const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(point.x - normal.x * 0.08, point.y - normal.y * 0.08, 0.2),
-            new THREE.Vector3(point.x + normal.x * 0.08, point.y + normal.y * 0.08, 0.2),
+            new THREE.Vector3(point.x - normal.x * 0.08, point.y - normal.y * 0.08, 0.02),
+            new THREE.Vector3(point.x + normal.x * 0.08, point.y + normal.y * 0.08, 0.02),
           ]), new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x111111 }))
           ticks.add(tick)
         }
         const label = textSprite(`${reading.distance.toFixed(3)} m`)
-        label.position.set(center.x + normal.x * 0.38, center.y + normal.y * 0.38, 0.5)
-        label.userData = { instrumentId: instrument.id, center }
+        label.position.set(center.x + normal.x * 0.38, center.y + normal.y * 0.38, 0.04)
         forceGroup.add(ticks, label)
+
+        // Compact center grab handle
+        const centerHandle = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 9), new THREE.MeshBasicMaterial({ color: selected ? 0xf2cf00 : 0x006f9e }))
+        centerHandle.position.set(center.x, center.y, 0.03)
+        centerHandle.userData = { instrumentId: instrument.id, center }
+        forceGroup.add(centerHandle)
+
         if (!running) for (const endpoint of ['a', 'b']) {
           const handle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 9), new THREE.MeshBasicMaterial({ color: endpoint === 'a' ? 0xf2cf00 : 0x00a965 }))
-          handle.position.set(instrument[endpoint].x, instrument[endpoint].y, 0.24)
+          handle.position.set(instrument[endpoint].x, instrument[endpoint].y, 0.03)
           handle.userData = { instrumentId: instrument.id, endpoint, center: instrument[endpoint] }
           forceGroup.add(handle)
         }
       } else if (instrument.type === 'photogate') {
         const tangent = { x: Math.cos(instrument.angle), y: Math.sin(instrument.angle) }
         const half = instrument.length / 2
-        const points = [new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.2), new THREE.Vector3(instrument.center.x + tangent.x * half, instrument.center.y + tangent.y * half, 0.2)]
+        const points = [new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.02), new THREE.Vector3(instrument.center.x + tangent.x * half, instrument.center.y + tangent.y * half, 0.02)]
         const gate = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x009d5b }))
-        gate.userData = { instrumentId: instrument.id, center: instrument.center }
         forceGroup.add(gate)
-        const hub = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), new THREE.MeshBasicMaterial({ color: selected ? 0xf2cf00 : 0x009d5b }))
-        hub.position.set(instrument.center.x, instrument.center.y, 0.24)
+        const hub = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.12), new THREE.MeshBasicMaterial({ color: selected ? 0xf2cf00 : 0x009d5b }))
+        hub.position.set(instrument.center.x, instrument.center.y, 0.03)
         hub.userData = { instrumentId: instrument.id, center: instrument.center }
         forceGroup.add(hub)
         if (instrument.pairId && instrument.pairRole === 'A') {
@@ -764,29 +841,26 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
           if (paired) {
             const pairedTangent = { x: Math.cos(paired.angle), y: Math.sin(paired.angle) }
             const bracketPoints = [
-              new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.16),
-              new THREE.Vector3(instrument.center.x + tangent.x * half, instrument.center.y + tangent.y * half, 0.16),
-              new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.16),
-              new THREE.Vector3(paired.center.x - pairedTangent.x * paired.length / 2, paired.center.y - pairedTangent.y * paired.length / 2, 0.16),
-              new THREE.Vector3(paired.center.x - pairedTangent.x * paired.length / 2, paired.center.y - pairedTangent.y * paired.length / 2, 0.16),
-              new THREE.Vector3(paired.center.x + pairedTangent.x * paired.length / 2, paired.center.y + pairedTangent.y * paired.length / 2, 0.16),
+              new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.02),
+              new THREE.Vector3(instrument.center.x + tangent.x * half, instrument.center.y + tangent.y * half, 0.02),
+              new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.02),
+              new THREE.Vector3(paired.center.x - pairedTangent.x * paired.length / 2, paired.center.y - pairedTangent.y * paired.length / 2, 0.02),
+              new THREE.Vector3(paired.center.x - pairedTangent.x * paired.length / 2, paired.center.y - pairedTangent.y * paired.length / 2, 0.02),
+              new THREE.Vector3(paired.center.x + pairedTangent.x * paired.length / 2, paired.center.y + pairedTangent.y * paired.length / 2, 0.02),
             ]
             const bracket = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(bracketPoints), new THREE.LineBasicMaterial({ color: selected || paired.id === selectedId ? 0xf2cf00 : 0x444444 }))
-            bracket.userData = { instrumentId: instrument.id, center: instrument.center }
             forceGroup.add(bracket)
             const bracketA = bracketPoints[2]
             const bracketB = bracketPoints[3]
             const bracketDx = bracketB.x - bracketA.x
             const bracketDy = bracketB.y - bracketA.y
             const bracketLength = Math.hypot(bracketDx, bracketDy)
-            const grip = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.2, bracketLength), 0.12, 0.14), new THREE.MeshBasicMaterial({ color: selected || paired.id === selectedId ? 0xf2cf00 : 0x006f55 }))
-            grip.position.set((bracketA.x + bracketB.x) / 2, (bracketA.y + bracketB.y) / 2, 0.17)
+            const grip = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.2, bracketLength), 0.12, 0.06), new THREE.MeshBasicMaterial({ color: selected || paired.id === selectedId ? 0xf2cf00 : 0x006f55 }))
+            grip.position.set((bracketA.x + bracketB.x) / 2, (bracketA.y + bracketB.y) / 2, 0.02)
             grip.rotation.z = Math.atan2(bracketDy, bracketDx)
-            grip.userData = { instrumentId: instrument.id, center: instrument.center }
             forceGroup.add(grip)
             const spacing = textSprite(`${instrument.nominalSpacing.toFixed(3)} m · A→B`, '#006f55', 1.8, 0.34)
-            spacing.position.set((instrument.center.x + paired.center.x) / 2, (instrument.center.y + paired.center.y) / 2 + 0.48, 0.52)
-            spacing.userData = { instrumentId: instrument.id, center: instrument.center }
+            spacing.position.set((instrument.center.x + paired.center.x) / 2, (instrument.center.y + paired.center.y) / 2 + 0.48, 0.04)
             forceGroup.add(spacing)
           }
         }
@@ -798,13 +872,13 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       if (selectedBody) {
         const datum = 0
         const dimension = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(selectedBody.position.x, datum, 0.34),
-          new THREE.Vector3(selectedBody.position.x, selectedBody.position.y, 0.34),
+          new THREE.Vector3(selectedBody.position.x, datum, 0.02),
+          new THREE.Vector3(selectedBody.position.x, selectedBody.position.y, 0.02),
         ]), new THREE.LineDashedMaterial({ color: 0x006f9e, dashSize: 0.16, gapSize: 0.1 }))
         dimension.computeLineDistances()
         const energy = bodyEnergy(selectedBody, renderWorld.gravity, datum)
         const label = textSprite(`h = ${energy.height.toFixed(3)} m`, '#006f9e')
-        label.position.set(selectedBody.position.x + 1.7, (datum + selectedBody.position.y) / 2, 0.6)
+        label.position.set(selectedBody.position.x + 1.7, (datum + selectedBody.position.y) / 2, 0.04)
         forceGroup.add(dimension, label)
         dimensionOverlayRef.current = { dimension, label, bodyId: selectedBody.id }
       }
@@ -821,11 +895,11 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
           const centerY = (minY + maxY) / 2
           const radius = (maxY - minY) / 2
           const radiusLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(centerX, centerY, 0.36),
-            new THREE.Vector3(centerX, maxY, 0.36),
+            new THREE.Vector3(centerX, centerY, 0.02),
+            new THREE.Vector3(centerX, maxY, 0.02),
           ]), new THREE.LineBasicMaterial({ color: 0x7a3db8 }))
           const radiusLabel = textSprite(`R = ${radius.toFixed(3)} m · D = ${(2 * radius).toFixed(3)} m`, '#7a3db8')
-          radiusLabel.position.set(centerX + 1.65, centerY + radius / 2, 0.6)
+          radiusLabel.position.set(centerX + 1.65, centerY + radius / 2, 0.04)
           forceGroup.add(radiusLine, radiusLabel)
         }
       }
@@ -842,13 +916,13 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       if (!resolved) continue
       const emphasized = isSnapTarget || isAcquiredTarget || isAcquiredSource
       const marker = new THREE.Mesh(new THREE.SphereGeometry(emphasized ? 0.18 : port.custom ? 0.12 : 0.095, 14, 9), new THREE.MeshBasicMaterial({ color: isSnapSource || isDragSource ? 0xf2cf00 : 0x00a965 }))
-      marker.position.set(resolved.position.x, resolved.position.y, 0.24)
+      marker.position.set(resolved.position.x, resolved.position.y, 0.03)
       marker.userData.entityId = port.id
       forceGroup.add(marker)
       let halo = null
       if (isSnapTarget || isAcquiredTarget) {
         halo = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.045, 10, 28), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
-        halo.position.set(resolved.position.x, resolved.position.y, 0.22)
+        halo.position.set(resolved.position.x, resolved.position.y, 0.035)
         forceGroup.add(halo)
       }
       portArtifactsRef.current.set(port.id, { marker, halo })

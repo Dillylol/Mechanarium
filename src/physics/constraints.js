@@ -77,6 +77,29 @@ function contactWithSurface(body, surface, dt, gravity) {
     tangentVelocity = velocityTangent - Math.sign(velocityTangent) * frictionDelta
     frictionImpulse = -Math.sign(velocityTangent) * frictionDelta * body.mass
     if (body.shape === 'circle' && friction > 0.05) angularVelocity = tangentVelocity / body.radius
+    if (['beam', 'box'].includes(body.shape)) {
+      const beamTangent = { x: Math.cos(body.angle), y: Math.sin(body.angle) }
+      const lowestSign = -Math.sign(dot(beamTangent, normal)) || 1
+      const halfLength = body.shape === 'beam' ? body.length / 2 : Math.hypot(body.width, body.height) / 2
+      const contactOffset = scale(beamTangent, lowestSign * halfLength)
+      const lever = contactOffset.x * normal.y - contactOffset.y * normal.x
+      const contactNormalVelocity = velocityNormal + body.angularVelocity * lever
+      const inverseInertia = 1 / Math.max(body.assemblyInertia ?? body.inertia, 1e-9)
+      const effectiveInverseMass = 1 / body.mass + lever ** 2 * inverseInertia
+
+      if (contactNormalVelocity < 0 || penetration > 0) {
+        const targetImpulseSpeed = (contactNormalVelocity < 0 ? -(1 + restitution) * contactNormalVelocity : 0) + 0.2 * Math.max(0, penetration) / dt
+        const nImpulse = targetImpulseSpeed / effectiveInverseMass
+        angularVelocity += lever * nImpulse * inverseInertia
+      }
+
+      const maxFrictionDamping = friction * (normalImpulse || body.mass * 9.8 * dt) * (halfLength / 2) * inverseInertia
+      if (Math.abs(angularVelocity) <= maxFrictionDamping) {
+        angularVelocity = 0
+      } else {
+        angularVelocity -= Math.sign(angularVelocity) * maxFrictionDamping
+      }
+    }
   }
   const point = add(body.position, scale(normal, -radius))
   const contactLoads = [...(body._contactLoads ?? [])]

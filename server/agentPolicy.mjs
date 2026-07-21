@@ -42,16 +42,24 @@ const targetsByAction = new Map([
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
+export function normalizeAgentHistory(history) {
+  if (!Array.isArray(history)) return []
+  return history.slice(-6).flatMap((message) => {
+    if (!isRecord(message)) return []
+    const role = message.role === 'assistant' ? 'assistant' : message.role === 'user' ? 'user' : null
+    if (!role) return []
+    const content = typeof message.content === 'string' ? message.content.trim().slice(0, 1_000) : ''
+    return content ? [{ role, content }] : []
+  })
+}
+
 export function validateAgentInput(input) {
   if (!isRecord(input)) throw new TypeError('Agent request must be a JSON object.')
   if (typeof input.message !== 'string' || (!input.message.trim() && !input.image) || input.message.length > 2_000) throw new TypeError('Student request must contain text or an attached diagram/image.')
   if (!isRecord(input.scenario) || !Array.isArray(input.scenario.bodies) || !Array.isArray(input.scenario.tracks)) throw new TypeError('A valid Scenario v4 summary is required.')
   if (!isRecord(input.telemetry)) throw new TypeError('Current telemetry is required.')
-  const history = input.history ?? []
-  if (!Array.isArray(history) || history.length > 6) throw new TypeError('Conversation context may contain at most six messages.')
-  for (const message of history) {
-    if (!isRecord(message) || !['user', 'assistant'].includes(message.role) || typeof message.content !== 'string' || message.content.length > 1_000) throw new TypeError('Conversation messages require a supported role and at most 1,000 characters.')
-  }
+  const history = normalizeAgentHistory(input.history)
+  if (Array.isArray(input.history) && input.history.length > 6) throw new TypeError('Conversation context may contain at most six messages.')
   const image = typeof input.image === 'string' && (input.image.startsWith('data:image/') || input.image.startsWith('http')) && input.image.length < 8_000_000 ? input.image : null
   return { message: (input.message || '').trim(), scenario: input.scenario, telemetry: input.telemetry, history, image }
 }

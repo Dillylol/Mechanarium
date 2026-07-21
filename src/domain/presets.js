@@ -9,6 +9,7 @@ const common = {
   integrator: INTEGRATORS.VELOCITY_VERLET,
   bounds: { minX: -8, maxX: 8, minY: -4.5, maxY: 7.5 },
   duration: 20,
+  constraints: [{ id: 'floor', type: 'ground', y: -3.6, restitution: 0.35, friction: 0.08 }],
 }
 
 const rollingTrack = createTrack({
@@ -153,14 +154,12 @@ const presets = [
       createConnector('spring', {
         id: 'launch-spring',
         name: 'Spring k',
-        a: { type: 'world', position: { x: -4.5, y: -3.3 } },
-        b: { type: 'port', ownerId: 'block-m', portId: 'block-m:center' },
+        a: { type: 'world', position: { x: -4.5, y: -3.2 } },
+        b: { type: 'port', ownerId: 'block-m', portId: 'block-m:west' },
         restLength: 2.5,
         stiffness: 800,
         damping: 0,
         unattached: true,
-        attached: false,
-        mode: 'push',
       }),
     ],
     tracks: [
@@ -169,11 +168,11 @@ const presets = [
         name: 'Horizontal to Ramp Track',
         friction: 0,
         restitution: 0,
-        ideal: true,
+        ideal: false,
         knots: [
-          createSplineKnot({ id: 'ramp-wall-start', position: { x: -4.5, y: -3.6 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
-          createSplineKnot({ id: 'ramp-flat-mid', position: { x: 0, y: -3.6 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
-          createSplineKnot({ id: 'ramp-curve-up', position: { x: 4, y: 1.0 }, tangent: { x: 2.5, y: 3 }, secondDerivative: { x: -1, y: 1 } }),
+          createSplineKnot({ id: 'ramp-wall-start', position: { x: -4.5, y: -3.6 }, tangent: { x: 4.807922546202714, y: -0.48154177054530806 }, secondDerivative: { x: 4.5, y: 0 } }),
+          createSplineKnot({ id: 'ramp-flat-mid', position: { x: -0.06244548501136782, y: -3.540980968373833 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: -0.5, y: 4.6 } }),
+          createSplineKnot({ id: 'ramp-curve-up', position: { x: 6.021340213988095, y: 1.1854759049809622 }, tangent: { x: 5.333594741863015, y: 0.0007765795986341179 }, secondDerivative: { x: -1, y: 1 } }),
         ],
       }),
     ],
@@ -181,14 +180,14 @@ const presets = [
       createInstrument('ruler', {
         id: 'height-ruler',
         name: 'Ramp Height h',
-        a: { x: 0, y: -3.6 },
-        b: { x: 0, y: 1.0 },
+        a: { x: 0.02605846775543008, y: -3.5547387545324325 },
+        b: { x: 0.02605846775543008, y: 1.0452612454675674 },
       }),
       createInstrument('ruler', {
         id: 'compression-ruler',
         name: 'Compression Distance s',
-        a: { x: -4.5, y: -2.7 },
-        b: { x: -2.0, y: -2.7 },
+        a: { x: -4.522179320871206, y: -2.705398894640246 },
+        b: { x: -2.022179320871207, y: -2.705398894640246 },
       }),
     ],
     ports: [], joints: [], forces: [], constraints: [],

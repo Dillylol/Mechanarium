@@ -192,11 +192,14 @@ function stepWorldOnce(world, dt) {
     const nextAcceleration = scale(netWorldForce(predicted, body, load.force), 1 / body.mass)
     const canRotate = !(body.shape === 'wheel' && body.rotationMode === 'fixed')
     const nextAngularAcceleration = canRotate ? load.torque / Math.max(body.assemblyInertia ?? body.inertia, 1e-9) : 0
+    const isJointed = world.joints?.some((j) => (j.a?.ownerId === body.id) || (j.b?.ownerId === body.id)) || world.connectors?.some((c) => (c.a?.ownerId === body.id) || (c.b?.ownerId === body.id))
+    const angularDamping = isJointed ? 1.0 : (body.shape === 'beam' || body.shape === 'box') ? 0.999 : 1.0
+    const nextAngularVelocity = canRotate ? (body.angularVelocity + nextAngularAcceleration * dt / 2) * angularDamping : 0
     return {
       ...body,
       velocity: add(body.velocity, scale(nextAcceleration, dt / 2)),
       acceleration: nextAcceleration,
-      angularVelocity: canRotate ? body.angularVelocity + nextAngularAcceleration * dt / 2 : 0,
+      angularVelocity: nextAngularVelocity,
       angularAcceleration: nextAngularAcceleration,
     }
   })

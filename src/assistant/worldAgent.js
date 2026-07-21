@@ -168,6 +168,15 @@ export function planWorldLocally(message, context = {}) {
 
 const agentEndpoint = import.meta.env.VITE_AGENT_API_URL?.trim() || '/api/agent'
 
+function sanitizeAgentHistory(history = []) {
+  return history.slice(-6).flatMap((item) => {
+    const role = item?.role === 'assistant' ? 'assistant' : item?.role === 'user' ? 'user' : null
+    if (!role) return []
+    const content = typeof item?.content === 'string' ? item.content.trim().slice(0, 1_000) : ''
+    return content ? [{ role, content }] : []
+  })
+}
+
 function previewLargeChange(result) {
   if (result.proposal) return result
   const requiresPreview = result.actions?.some((action) => ['load_preset', 'add_spline_track'].includes(action.type)) || result.actions?.length > 2
@@ -188,7 +197,7 @@ export async function askWorldAgent({ message, scenario, world, selectedEntity, 
     const response = await fetch(agentEndpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message, scenario, telemetry: enrichedTelemetry, history: history.slice(-6).map((item) => ({ role: item.role, content: item.content })), image }),
+      body: JSON.stringify({ message, scenario, telemetry: enrichedTelemetry, history: sanitizeAgentHistory(history), image }),
       signal,
     })
     if (!response.ok) {
