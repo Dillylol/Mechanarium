@@ -37,9 +37,6 @@ scripts/extract-frq.py
 # Demo prep (local only — scripts, screenshots, plans)
 demo/
 
-# Internal engineering postmortem (local until submission copy is ready)
-docs/vector_failure_analysis.md
-
 # Probe/debug scripts and output (local dev only)
 scripts/probe-agent.mjs
 scripts/probe-frq.mjs
