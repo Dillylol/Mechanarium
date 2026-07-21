@@ -25,6 +25,9 @@ describe('Vector agent dock', () => {
 
     const firstPayload = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(firstPayload.telemetry.selected_body.id).toBe(world.bodies[1].id)
+    expect(firstPayload.telemetry.world_description.entities.bodies.map((body) => body.id)).toEqual(world.bodies.map((body) => body.id))
+    expect(firstPayload.telemetry.world_description.selected.id).toBe(world.bodies[1].id)
+    expect(firstPayload.telemetry.world_description.selected.forces.net.unit).toBe('N')
     expect(firstPayload.history).toEqual([])
 
     await user.type(input, 'What about its momentum?')

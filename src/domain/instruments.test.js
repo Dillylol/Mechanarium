@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInstrument, deriveGateResults, detectPhotogateCrossings, measuredValue, rulerReading } from './instruments.js'
+import { createInstrument, deriveGateResults, detectPhotogateCrossings, measuredValue, rulerReading, validatePhotogatePairs } from './instruments.js'
 
 const body = (x, y = 0, vx = 2) => ({ id: 'cart', name: 'Cart', radius: 0.2, position: { x, y }, velocity: { x: vx, y: 0 }, acceleration: { x: 0, y: 0 } })
 const world = (time, x, y = 0, vx = 2) => ({ time, bodies: [body(x, y, vx)] })
@@ -33,6 +33,22 @@ describe('laboratory instruments', () => {
     const gates = [createInstrument('photogate', { id: 'a', center: { x: 0, y: 0 } }), createInstrument('photogate', { id: 'b', center: { x: 2, y: 0 } })]
     const results = deriveGateResults([{ gateId: 'a', bodyId: 'cart', bodyName: 'Cart', time: 1, speed: 2 }, { gateId: 'b', bodyId: 'cart', bodyName: 'Cart', time: 1.5, speed: 3 }], gates)
     expect(results[0]).toMatchObject({ interval: 0.5, spacing: 2, averageSpeed: 4, acceleration: 2 })
+  })
+
+  it('keeps explicit photogate assemblies isolated and uses their track spacing', () => {
+    const gates = [
+      createInstrument('photogate', { id: 'a', pairId: 'pair-1', pairRole: 'A', nominalSpacing: 2, trackId: 'track', trackDistance: 1 }),
+      createInstrument('photogate', { id: 'b', pairId: 'pair-1', pairRole: 'B', nominalSpacing: 2, trackId: 'track', trackDistance: 4 }),
+      createInstrument('photogate', { id: 'manual', center: { x: 99, y: 0 } }),
+    ]
+    expect(validatePhotogatePairs(gates)).toEqual([])
+    const results = deriveGateResults([
+      { gateId: 'a', bodyId: 'cart', bodyName: 'Cart', time: 1, speed: 2 },
+      { gateId: 'manual', bodyId: 'cart', bodyName: 'Cart', time: 1.2, speed: 2.5 },
+      { gateId: 'b', bodyId: 'cart', bodyName: 'Cart', time: 2, speed: 4 },
+    ], gates)
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ pairId: 'pair-1', interval: 1, spacing: 3, averageSpeed: 3, acceleration: 2 })
   })
 
   it('keeps optional uncertainty deterministic for a stored seed', () => {

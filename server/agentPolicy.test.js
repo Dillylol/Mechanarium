@@ -7,6 +7,8 @@ describe('Vector server policy', () => {
     const scenario = getPreset('physical-pendulum')
     expect(validateAgentInput({ message: 'Explain the motion', scenario, telemetry: {}, history: [] }).message).toBe('Explain the motion')
     expect(validateWorldActions([{ type: 'load_preset', target: 'orbital-motion', name: null, x: null, y: null, value: null, entityId: null, portId: null, otherEntityId: null, otherPortId: null, endpoint: null }], scenario)).toHaveLength(1)
+    expect(validateWorldActions([{ type: 'load_preset', target: 'spring-ramp-launch' }], scenario)).toHaveLength(1)
+    expect(validateWorldActions([{ type: 'add_instrument', target: 'photogateAssembly' }], scenario)).toHaveLength(1)
   })
 
   it('rejects oversized history and incompatible action targets', () => {
@@ -21,14 +23,21 @@ describe('Vector server policy', () => {
     expect(() => validateWorldActions([{ type: 'add_joint', target: 'pin', entityId: 'missing', portId: 'missing:center', otherEntityId: 'compound-mass', otherPortId: 'compound-mass:center' }], scenario)).toThrow(/exact ports/i)
   })
 
-  it('accepts finite spline blueprints and rejects degenerate ones', () => {
+  it('accepts feature-based spline blueprints and compiles exact knots', () => {
     const scenario = getPreset('projectile-motion')
-    const action = { type: 'add_spline_track', target: 'spline', track: { id: 'curve', name: 'Curve', supportSide: 'left', thickness: 0.18, friction: 0.2, restitution: 0, startEnd: 'start', knots: [
-      { id: 'a', position: { x: -2, y: 0 }, tangent: { x: 2, y: 0 }, secondDerivative: { x: 0, y: 0 } },
-      { id: 'b', position: { x: 2, y: 0 }, tangent: { x: 2, y: 0 }, secondDerivative: { x: 0, y: 0 } },
-    ] } }
-    expect(validateWorldActions([action], scenario)).toHaveLength(1)
-    action.track.knots[1].position = { x: -2, y: 0 }
-    expect(() => validateWorldActions([action], scenario)).toThrow(/coincident/i)
+    const action = {
+      type: 'add_spline_track', target: 'spline',
+      track: {
+        id: 'feature-curve', name: 'Feature Curve', supportSide: 'left', thickness: 0.18, friction: 0, restitution: 0, startEnd: 'start',
+        features: [
+          { type: 'release', position: { x: -7.5, y: 6 }, center: null, radius: null },
+          { type: 'loop', position: null, center: { x: -2.5, y: 1 }, radius: 1 },
+          { type: 'runout', position: { x: 7.5, y: 2 }, center: null, radius: null },
+        ],
+      },
+    }
+    const validated = validateWorldActions([action], scenario)
+    expect(validated).toHaveLength(1)
+    expect(validated[0].track.features).toBeDefined()
   })
 })

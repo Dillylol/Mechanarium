@@ -15,7 +15,7 @@ Mechanarium is an interactive three-dimensional mechanics laboratory for learnin
 - Straight and C²-continuous quintic spline tracks whose rendering and collision contact share one adaptively sampled geometry.
 - Free-body loop motion: an object can maintain contact, detach into projectile motion, and re-contact the visible rail.
 - Hybrid curve editing with Loop, Hill, Valley, and Blank Spline templates, draggable knots and tangent handles, numeric second-derivative controls, and selectable support side.
-- Thirteen prepared experiments, including ideal/massive-pulley Atwood machines, a loop-the-loop, and an editable spline roller coaster.
+- Fourteen prepared experiments, including ideal/massive-pulley Atwood machines, a loop-the-loop, a spring-launch ramp, and an editable spline roller coaster.
 - Energy, kinematics, force, torque, track-coordinate, curvature, and normal-force telemetry with Scenario JSON and SI CSV export.
 - Rulers and photogates with swept 120 Hz crossing detection, reproducible uncertainty, repeated trials, plots, and notebook JSON/CSV.
 - A Learn area with onboarding plus guided Projectile, Incline, Atwood, and Loop investigations.

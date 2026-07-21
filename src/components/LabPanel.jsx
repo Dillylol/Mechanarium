@@ -41,6 +41,7 @@ export default function LabPanel({ world, selectedId, recordingStatus, pendingTr
     {instruments.length === 0 && <p className="environment-help">Add a ruler and two photogates from the Build panel.</p>}
     {instruments.map((instrument) => <article key={instrument.id} className={`instrument-card${instrument.id === selectedId ? ' selected' : ''}`} onClick={() => onSelect(instrument.id)}>
       <div className="environment-card-heading"><span>{instrument.type === 'ruler' ? <Ruler size={15} /> : <Gauge size={15} />}<strong>{instrument.name}</strong></span><button type="button" className="icon-button danger" onClick={(event) => { event.stopPropagation(); onRemove(instrument.id) }} disabled={running} aria-label={`Remove ${instrument.name}`}><Trash2 size={15} /></button></div>
+      {instrument.pairId && <p className="instrument-reading">Photogate assembly · plane {instrument.pairRole} · moves with its paired plane</p>}
       <fieldset disabled={running}><div className="field-grid">
         {instrument.type === 'ruler' ? <>
           <NumberField label="Start x" value={instrument.a.x} unit="m" onChange={(x) => onUpdate(instrument.id, { a: { ...instrument.a, x } })} />
@@ -52,6 +53,7 @@ export default function LabPanel({ world, selectedId, recordingStatus, pendingTr
           <NumberField label="Center y" value={instrument.center.y} unit="m" onChange={(y) => onUpdate(instrument.id, { center: { ...instrument.center, y } })} />
           <NumberField label="Angle" value={instrument.angle * 180 / Math.PI} unit="deg" onChange={(angle) => onUpdate(instrument.id, { angle: angle * Math.PI / 180 })} />
           <NumberField label="Aperture" value={instrument.length} unit="m" min={0.1} onChange={(length) => onUpdate(instrument.id, { length })} />
+          {instrument.pairId && <NumberField label="Assembly spacing" value={instrument.nominalSpacing} unit="m" min={0.01} onChange={(nominalSpacing) => onUpdate(instrument.id, { nominalSpacing })} />}
           <label className="instrument-target">Target body<select value={instrument.targetBodyId ?? ''} onChange={(event) => onUpdate(instrument.id, { targetBodyId: event.target.value || null })}>
             <option value="">Any body</option>
             {world.bodies.map((body) => <option value={body.id} key={body.id}>{body.name}</option>)}

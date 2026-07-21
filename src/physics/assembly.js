@@ -146,6 +146,10 @@ export function connectorState(world, connector) {
   const relativeSpeed = dot(subtract(b.velocity, a.velocity), direction)
   if (connector.type === 'spring') {
     const extension = length - connector.restLength
+    const isPushOnly = connector.unattached || connector.attached === false || connector.mode === 'push'
+    if (isPushOnly && extension > 0) {
+      return { a, b, length, direction, relativeSpeed, extension, force: 0, tension: 0, elasticEnergy: 0 }
+    }
     const force = connector.stiffness * extension + (connector.damping ?? 0) * relativeSpeed
     return { a, b, length, direction, relativeSpeed, extension, force, tension: Math.max(0, force), elasticEnergy: 0.5 * connector.stiffness * extension ** 2 }
   }
@@ -224,7 +228,9 @@ export function buildLoadLedger(world) {
       if (contact) {
         const surface = world.tracks.find((candidate) => candidate.id === contact.sourceId)
           ?? world.bodies.find((candidate) => candidate.id === contact.sourceId && candidate.mode === 'track')
-        const tangent = { x: Math.cos(surface?.angle ?? 0), y: Math.sin(surface?.angle ?? 0) }
+        const tangent = body._trackContact?.trackId === contact.sourceId
+          ? body._trackContact.tangent
+          : { x: Math.cos(surface?.angle ?? 0), y: Math.sin(surface?.angle ?? 0) }
         entry.slipError = Math.abs(dot(body.velocity, tangent) + body.angularVelocity * body.radius)
       }
       const mount = wheelCenterMount(world, body)

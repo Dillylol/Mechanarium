@@ -19,6 +19,11 @@ export function createInstrument(type = 'ruler', overrides = {}) {
     angle: overrides.angle ?? Math.PI / 2,
     length: overrides.length ?? 2,
     targetBodyId: overrides.targetBodyId ?? null,
+    pairId: overrides.pairId ?? null,
+    pairRole: overrides.pairRole ?? null,
+    nominalSpacing: overrides.nominalSpacing ?? null,
+    trackId: overrides.trackId ?? null,
+    trackDistance: overrides.trackDistance ?? null,
   }
   return {
     ...common,
@@ -37,6 +42,24 @@ export function validateInstrument(instrument, bodyIds = new Set()) {
   if (instrument?.type === 'photogate') {
     if (!finiteVector(instrument.center) || !Number.isFinite(instrument.angle) || !finitePositive(instrument.length)) errors.push(`Photogate ${instrument?.id ?? 'unknown'} has invalid geometry.`)
     if (instrument.targetBodyId && !bodyIds.has(instrument.targetBodyId)) errors.push(`Photogate ${instrument.id} references unknown body ${instrument.targetBodyId}.`)
+    if (instrument.pairId && !['A', 'B'].includes(instrument.pairRole)) errors.push(`Photogate ${instrument.id} requires pair role A or B.`)
+    if (instrument.pairId && !finitePositive(instrument.nominalSpacing)) errors.push(`Photogate ${instrument.id} requires positive assembly spacing.`)
+    if (instrument.trackDistance !== null && !Number.isFinite(instrument.trackDistance)) errors.push(`Photogate ${instrument.id} has invalid track distance.`)
+  }
+  return errors
+}
+
+export function validatePhotogatePairs(instruments = []) {
+  const errors = []
+  const pairs = new Map()
+  for (const gate of instruments.filter((instrument) => instrument.type === 'photogate' && instrument.pairId)) {
+    if (!pairs.has(gate.pairId)) pairs.set(gate.pairId, [])
+    pairs.get(gate.pairId).push(gate)
+  }
+  for (const [pairId, gates] of pairs) {
+    const roles = new Set(gates.map((gate) => gate.pairRole))
+    if (gates.length !== 2 || !roles.has('A') || !roles.has('B')) errors.push(`Photogate assembly ${pairId} requires exactly one A and one B plane.`)
+    if (new Set(gates.map((gate) => gate.targetBodyId ?? '')).size > 1) errors.push(`Photogate assembly ${pairId} must target the same body.`)
   }
   return errors
 }
@@ -104,6 +127,8 @@ export function detectPhotogateCrossings(previousWorld, nextWorld, instruments, 
             id: `${gate.id}:${nextBody.id}:${rawTime.toFixed(9)}`,
             gateId: gate.id,
             gateName: gate.name,
+            pairId: gate.pairId ?? null,
+            pairRole: gate.pairRole ?? null,
             bodyId: nextBody.id,
             bodyName: nextBody.name,
             direction: Math.sign(d1 - d0),
@@ -127,11 +152,45 @@ export function deriveGateResults(events, instruments) {
   const gates = new Map(instruments.filter((instrument) => instrument.type === 'photogate').map((gate) => [gate.id, gate]))
   const results = []
   const byBody = new Map()
+  const assemblyStarts = new Map()
   for (const event of [...events].sort((a, b) => a.time - b.time)) {
+    const gate = gates.get(event.gateId)
+    if (gate?.pairId) {
+      const key = `${gate.pairId}:${event.bodyId}`
+      const previous = assemblyStarts.get(key)
+      const a = previous && gates.get(previous.gateId)
+      if (previous && a && a.pairRole !== gate.pairRole) {
+        const interval = event.time - previous.time
+        if (interval > 0) {
+          const trackSpacing = a.trackId && a.trackId === gate.trackId && Number.isFinite(a.trackDistance) && Number.isFinite(gate.trackDistance)
+            ? Math.abs(gate.trackDistance - a.trackDistance)
+            : null
+          const spacing = trackSpacing ?? gate.nominalSpacing ?? a.nominalSpacing ?? Math.hypot(gate.center.x - a.center.x, gate.center.y - a.center.y)
+          results.push({
+            pairId: gate.pairId,
+            bodyId: event.bodyId,
+            bodyName: event.bodyName,
+            fromGateId: previous.gateId,
+            toGateId: event.gateId,
+            startTime: previous.time,
+            endTime: event.time,
+            interval,
+            spacing,
+            averageSpeed: spacing / interval,
+            acceleration: (event.speed - previous.speed) / interval,
+          })
+        }
+        assemblyStarts.delete(key)
+      } else {
+        assemblyStarts.set(key, event)
+      }
+      continue
+    }
     const previous = byBody.get(event.bodyId)
-    if (previous && previous.gateId !== event.gateId) {
+    const previousGate = previous && gates.get(previous.gateId)
+    if (previous && !previousGate?.pairId && previous.gateId !== event.gateId) {
       const a = gates.get(previous.gateId)
-      const b = gates.get(event.gateId)
+      const b = gate
       const interval = event.time - previous.time
       if (a && b && interval > 0) {
         const spacing = Math.hypot(b.center.x - a.center.x, b.center.y - a.center.y)

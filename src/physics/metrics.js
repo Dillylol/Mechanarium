@@ -1,11 +1,33 @@
 import { magnitudeSquared, scale, vector } from './vector.js'
 
 export const translationalKineticEnergy = (body) => 0.5 * body.mass * magnitudeSquared(body.velocity)
-export const rotationalKineticEnergy = (body) => 0.5 * (body.inertia ?? 0) * (body.angularVelocity ?? 0) ** 2
+export const rotationalKineticEnergy = (body) => 0.5 * (body.assemblyInertia ?? body.inertia ?? 0) * (body.angularVelocity ?? 0) ** 2
 export const gravitationalPotentialEnergy = (body, gravity = 9.80665, datum = 0) => body.mass * gravity * (body.position.y - datum)
 export const springPotentialEnergy = (extension, stiffness) => 0.5 * stiffness * extension ** 2
 export const linearMomentum = (body) => scale(body.velocity, body.mass)
-export const angularMomentum = (body) => (body.inertia ?? 0) * (body.angularVelocity ?? 0)
+export const angularMomentum = (body) => (body.assemblyInertia ?? body.inertia ?? 0) * (body.angularVelocity ?? 0)
+
+export function bodyEnergy(body, gravity = { enabled: false, g: 9.80665, direction: { x: 0, y: -1 } }, datum = 0) {
+  const translational = translationalKineticEnergy(body)
+  const rotational = rotationalKineticEnergy(body)
+  const direction = gravity.direction ?? { x: 0, y: -1 }
+  const directionLength = Math.hypot(direction.x, direction.y) || 1
+  const centerHeight = gravity.enabled
+    ? -(body.position.x * direction.x + body.position.y * direction.y) / directionLength - datum
+    : 0
+  const height = Math.max(0, centerHeight - (body.radius ?? 0))
+  const gravitational = gravity.enabled && body.gravityEnabled
+    ? body.mass * gravity.g * body.gravityMultiplier * height
+    : 0
+  return {
+    translational,
+    rotational,
+    kinetic: translational + rotational,
+    gravitational,
+    height,
+    mechanical: translational + rotational + gravitational,
+  }
+}
 
 export function summarizeSystem(bodies, potentialEnergy = 0) {
   return bodies.reduce((summary, body) => {

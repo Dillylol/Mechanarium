@@ -3,12 +3,14 @@ import { beamInertia, createBody, createConnector, createSplineTrack, createTrac
 import { sampleSpline, splinePointAtDistance } from '../domain/spline.js'
 import { createInstrument, deriveGateResults, detectPhotogateCrossings, sampleTrialWorld } from '../domain/instruments.js'
 import { getPreset } from '../domain/presets.js'
+import { alignBeamToSpline } from '../domain/railWeld.js'
 import { createFixedStepClock } from '../physics/clock.js'
 import { bodyLoadState, connectorState, resolveEndpoint, resolvePort, wheelCenterMount } from '../physics/assembly.js'
+import { bodyEnergy } from '../physics/metrics.js'
 import { magnitude } from '../physics/vector.js'
 import { createWorld, stepWorld, worldToScenario } from '../physics/world.js'
 
-const HISTORY_LIMIT = 480
+const HISTORY_LIMIT = 4800
 const UI_PUBLISH_INTERVAL_MS = 1000 / 30
 const MAX_TRIAL_SAMPLES = 120000
 const nextId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -61,9 +63,17 @@ function findBodySnapCandidate(world, bodyId, position, radius) {
       if (!target) continue
       const distance = Math.hypot(target.x - sourcePosition.x, target.y - sourcePosition.y)
       if (distance > radius || best && distance >= best.distance) continue
+      const targetOwner = world.tracks.find((track) => track.id === targetPort.ownerId)
+      const beamEndpoint = sourcePort.id.endsWith(':start') ? 'start' : sourcePort.id.endsWith(':end') ? 'end' : null
+      const splineEndpointName = targetPort.id.endsWith(':start') ? 'start' : targetPort.id.endsWith(':end') ? 'end' : null
+      const railAlignment = body.shape === 'beam' && body.mode === 'track' && targetOwner?.type === 'spline' && beamEndpoint && splineEndpointName
+        ? alignBeamToSpline({ ...body, position }, beamEndpoint, targetOwner, splineEndpointName)
+        : null
       best = {
         bodyId, sourcePort, targetPort, distance,
-        alignedPosition: { x: position.x + target.x - sourcePosition.x, y: position.y + target.y - sourcePosition.y },
+        alignedPosition: railAlignment?.position ?? { x: position.x + target.x - sourcePosition.x, y: position.y + target.y - sourcePosition.y },
+        alignedAngle: railAlignment?.angle,
+        railJoin: railAlignment?.join,
       }
     }
   }
@@ -83,6 +93,7 @@ function sampleWorld(world, bodyId) {
   const routedConnector = world.connectors.find((candidate) => candidate.route?.wheelId === body.id)
   const connector = routedConnector ? connectorState(world, routedConnector) : world.connectors[0] ? connectorState(world, world.connectors[0]) : null
   const loads = bodyLoadState(world, body.id)
+  const energy = bodyEnergy(body, world.gravity)
   const componentMagnitude = (kind) => (loads.components ?? []).filter((component) => component.kind === kind).reduce((sum, component) => sum + Math.hypot(component.force.x, component.force.y), 0)
   const axle = (loads.components ?? []).find((component) => component.kind === 'axle-reaction')?.force ?? { x: 0, y: 0 }
   return {
@@ -92,11 +103,14 @@ function sampleWorld(world, bodyId) {
     ax: body.acceleration.x, ay: body.acceleration.y,
     speed: magnitude(body.velocity),
     angle: body.angle, angularVelocity: body.angularVelocity,
+    angularAcceleration: body.angularAcceleration,
     torque: loads.netTorque,
     netTorque: loads.netTorque,
     netForce: loads.forceMagnitude,
     netForceX: loads.netForce.x,
     netForceY: loads.netForce.y,
+    linearMomentum: body.mass * magnitude(body.velocity),
+    impulse: body._initialVelocity ? body.mass * magnitude({ x: body.velocity.x - body._initialVelocity.x, y: body.velocity.y - body._initialVelocity.y }) : 0,
     slipError: loads.slipError ?? 0,
     tensionA: loads.tensionA ?? connector?.tensionA ?? '',
     tensionB: loads.tensionB ?? connector?.tensionB ?? '',
@@ -110,14 +124,23 @@ function sampleWorld(world, bodyId) {
     inertia: body.inertia,
     assemblyInertia: body.assemblyInertia ?? body.inertia,
     connectorLength: connector?.length ?? '', connectorTension: connector?.tension ?? '', connectorExtension: connector?.extension ?? '', connectorElasticEnergy: connector?.elasticEnergy ?? '',
-    kinetic: world.metrics.translationalKinetic + world.metrics.rotationalKinetic,
-    potential: world.metrics.potential, totalEnergy: world.metrics.total,
+    translationalKinetic: energy.translational,
+    rotationalKinetic: energy.rotational,
+    kinetic: energy.kinetic,
+    potential: energy.gravitational,
+    gravitationalPotential: energy.gravitational,
+    height: energy.height,
+    totalEnergy: energy.mechanical,
+    systemTotalEnergy: world.metrics.total,
     energyError: world.energyError.percent,
   }
 }
 
 export function useSimulation(initialPreset = 'projectile-motion') {
-  const initial = getPreset(initialPreset)
+  const [initial] = useState(() => {
+    const supplied = typeof initialPreset === 'function' ? initialPreset() : initialPreset
+    return typeof supplied === 'string' ? getPreset(supplied) : supplied
+  })
   const [sourceScenario, setSourceScenario] = useState(initial)
   const [world, setWorld] = useState(() => createWorld(initial))
   const [selectedId, setSelectedId] = useState(initial.bodies[0].id)
@@ -126,12 +149,15 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const [snapFeedback, setSnapFeedback] = useState('')
   const [dragSnapCandidate, setDragSnapCandidate] = useState(null)
   const [running, setRunningState] = useState(false)
+  const [reversing, setReversingState] = useState(false)
   const [runError, setRunError] = useState('')
   const [speed, setSpeed] = useState(1)
   const [history, setHistory] = useState([])
   const [recordingStatus, setRecordingStatus] = useState('idle')
   const [pendingTrial, setPendingTrial] = useState(null)
   const [notebook, setNotebook] = useState(() => loadNotebook(initial.id))
+  const [undoStack, setUndoStack] = useState([])
+  const [redoStack, setRedoStack] = useState([])
   const worldRef = useRef(world)
   const selectedRef = useRef(selectedId)
   const clockRef = useRef(createFixedStepClock({ fixedStep: world.fixedStep }))
@@ -139,6 +165,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const trialDraftRef = useRef(null)
   const activeTrialRef = useRef(null)
   const gateStateRef = useRef({})
+  const worldSnapshotsRef = useRef([])
 
   useEffect(() => { worldRef.current = world }, [world])
   useEffect(() => { selectedRef.current = selectedId }, [selectedId])
@@ -153,8 +180,10 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   }, [snapFeedback])
 
   const record = useCallback((nextWorld) => {
-    const sample = sampleWorld(nextWorld, selectedRef.current)
-    if (sample) setHistory((current) => [...current.slice(-(HISTORY_LIMIT - 1)), sample])
+    const samples = nextWorld.bodies.map((body) => sampleWorld(nextWorld, body.id)).filter(Boolean)
+    if (samples.length) setHistory((current) => [...current, ...samples].slice(-HISTORY_LIMIT))
+    worldSnapshotsRef.current.push(nextWorld)
+    if (worldSnapshotsRef.current.length > 6000) worldSnapshotsRef.current.shift()
   }, [])
 
   const setTrialStatus = useCallback((status) => {
@@ -233,7 +262,39 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     return () => cancelAnimationFrame(frameId)
   }, [captureTrialStep, finishRecording, record, running, speed])
 
-  const replaceScenario = useCallback((input) => {
+  useEffect(() => {
+    if (!reversing) return undefined
+    let frameId
+    let previous
+    let lastPublished
+    const frame = (now) => {
+      if (previous === undefined) { previous = now; lastPublished = now; frameId = requestAnimationFrame(frame); return }
+      previous = now
+      const interval = UI_PUBLISH_INTERVAL_MS / Math.max(0.1, speed)
+      if (now - lastPublished >= interval) {
+        lastPublished = now
+        let prevWorld = null
+        if (worldSnapshotsRef.current.length > 0) {
+          prevWorld = worldSnapshotsRef.current.pop()
+        }
+        if (prevWorld) {
+          worldRef.current = prevWorld
+          setWorld(prevWorld)
+          const bodyCount = Math.max(1, prevWorld.bodies?.length ?? 1)
+          setHistory((current) => current.slice(0, -bodyCount))
+        }
+        if (!prevWorld || prevWorld.time <= 0.001 || worldSnapshotsRef.current.length === 0) {
+          setReversingState(false)
+          return
+        }
+      }
+      frameId = requestAnimationFrame(frame)
+    }
+    frameId = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(frameId)
+  }, [reversing, speed])
+
+  const applyScenarioStateInternal = useCallback((input, options = {}) => {
     const result = validateScenario(input)
     if (!result.valid) throw new TypeError(result.errors.join(' '))
     const scenario = result.scenario
@@ -241,21 +302,32 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     setSourceScenario(structuredClone(scenario))
     setWorld(nextWorld); worldRef.current = nextWorld
     clockRef.current = createFixedStepClock({ fixedStep: nextWorld.fixedStep })
-    setSelectedId(nextWorld.bodies[0].id)
+    if (!options.keepSelectedId || !nextWorld.bodies.some((b) => b.id === selectedRef.current)) {
+      setSelectedId(nextWorld.bodies[0]?.id ?? null)
+    }
     setConnectionPortId(null)
     setSnapProposal(null)
     setDragSnapCandidate(null)
     activeTrialRef.current = null
     gateStateRef.current = {}
     trialDraftRef.current = null
+    worldSnapshotsRef.current = []
     setPendingTrial(null)
     setTrialStatus('idle')
     setNotebook((current) => current.scenarioId === scenario.id ? current : loadNotebook(scenario.id))
-    setHistory([]); setRunningState(false); setRunError('')
+    setHistory([]); setRunningState(false); setReversingState(false); setRunError('')
   }, [setTrialStatus])
+
+  const replaceScenario = useCallback((input) => {
+    const currentSnapshot = structuredClone(worldToScenario(worldRef.current))
+    setUndoStack((stack) => [...stack, currentSnapshot].slice(-50))
+    setRedoStack([])
+    applyScenarioStateInternal(input)
+  }, [applyScenarioStateInternal])
 
   const setRunning = useCallback((value) => {
     const next = typeof value === 'function' ? value(running) : value
+    if (next) setReversingState(false)
     if (next && worldRef.current.diagnostics.length) {
       setRunError(worldRef.current.diagnostics.join(' ')); setRunningState(false); return false
     }
@@ -263,6 +335,15 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     if (!next && recordingStatusRef.current === 'recording') finishRecording()
     setRunError(''); setRunningState(next); return true
   }, [beginRecording, finishRecording, running])
+
+  const toggleReverse = useCallback(() => {
+    if (reversing) {
+      setReversingState(false)
+    } else if (worldRef.current.time > 0.001 || worldSnapshotsRef.current.length > 0) {
+      setRunningState(false)
+      setReversingState(true)
+    }
+  }, [reversing])
 
   const loadPreset = useCallback((id) => replaceScenario(getPreset(id)), [replaceScenario])
   const reset = useCallback(() => replaceScenario(sourceScenario), [replaceScenario, sourceScenario])
@@ -295,11 +376,32 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   }, [record])
 
   const commitScenarioEdit = useCallback((edit) => {
+    const currentSnapshot = structuredClone(worldToScenario(worldRef.current))
+    setUndoStack((stack) => [...stack, currentSnapshot].slice(-50))
+    setRedoStack([])
     const scenario = worldToScenario(worldRef.current)
     edit(scenario)
     fitAutoLengthBeams(scenario)
-    replaceScenario(scenario)
-  }, [replaceScenario])
+    applyScenarioStateInternal(scenario, { keepSelectedId: true })
+  }, [applyScenarioStateInternal])
+
+  const undo = useCallback(() => {
+    if (undoStack.length === 0 || running) return
+    const prevSnapshot = undoStack[undoStack.length - 1]
+    const currentSnapshot = structuredClone(worldToScenario(worldRef.current))
+    setUndoStack((stack) => stack.slice(0, -1))
+    setRedoStack((stack) => [...stack, currentSnapshot].slice(-50))
+    applyScenarioStateInternal(prevSnapshot, { keepSelectedId: true })
+  }, [undoStack, running, applyScenarioStateInternal])
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0 || running) return
+    const nextSnapshot = redoStack[redoStack.length - 1]
+    const currentSnapshot = structuredClone(worldToScenario(worldRef.current))
+    setRedoStack((stack) => stack.slice(0, -1))
+    setUndoStack((stack) => [...stack, currentSnapshot].slice(-50))
+    applyScenarioStateInternal(nextSnapshot, { keepSelectedId: true })
+  }, [redoStack, running, applyScenarioStateInternal])
 
   const updateBody = useCallback((bodyId, changes) => {
     commitScenarioEdit((scenario) => {
@@ -385,7 +487,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   const moveAssemblyPart = useCallback((bodyId, position, snapRadius = 0.45) => {
     const candidate = findBodySnapCandidate(worldRef.current, bodyId, position, snapRadius)
-    updateBody(bodyId, { position: candidate?.alignedPosition ?? position, velocity: { x: 0, y: 0 } })
+    updateBody(bodyId, { position: candidate?.alignedPosition ?? position, ...(Number.isFinite(candidate?.alignedAngle) ? { angle: candidate.alignedAngle } : {}) })
     setDragSnapCandidate((current) => {
       if (!candidate) return null
       if (current?.bodyId === candidate.bodyId && current.sourcePortId === candidate.sourcePortId && current.targetPortId === candidate.targetPortId) return current
@@ -398,6 +500,16 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     const candidate = body && findBodySnapCandidate(worldRef.current, bodyId, body.position, snapRadius)
     setDragSnapCandidate(null)
     if (!candidate) return
+    if (candidate.railJoin) {
+      setSnapProposal({
+        kind: 'rail', bodyId, alignedPosition: candidate.alignedPosition, alignedAngle: candidate.alignedAngle,
+        railJoin: candidate.railJoin,
+        sourcePortId: candidate.sourcePort.id, targetPortId: candidate.targetPort.id,
+        sourceLabel: candidate.sourceLabel, targetLabel: candidate.targetLabel,
+        message: `${candidate.sourceLabel} will become a continuous rail with ${candidate.targetLabel}.`,
+      })
+      return
+    }
     setSnapProposal({
       kind: 'joint', jointType: 'rigid', firstPortId: candidate.targetPort.id, secondPortId: candidate.sourcePort.id,
       movingOwnerId: bodyId,
@@ -455,6 +567,18 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       updateConnector(proposal.connectorId, { [proposal.endpointKey]: { type: 'port', ownerId: proposal.target.ownerId, portId: proposal.target.portId } })
     } else if (proposal.kind === 'track') {
       updateTrack(proposal.trackId, { center: proposal.alignedCenter })
+    } else if (proposal.kind === 'rail') {
+      commitScenarioEdit((scenario) => {
+        const beam = scenario.bodies.find((body) => body.id === proposal.bodyId)
+        if (!beam) return
+        beam.position = proposal.alignedPosition
+        beam.angle = proposal.alignedAngle
+        beam.ideal = true
+        const joinedTrack = scenario.tracks.find((track) => track.id === proposal.railJoin.b.ownerId)
+        if (joinedTrack) joinedTrack.ideal = true
+        scenario.railJoins = scenario.railJoins.filter((join) => ![join.a, join.b].some((endpoint) => endpoint.ownerId === beam.id))
+        scenario.railJoins.push(proposal.railJoin)
+      })
     } else if (proposal.kind === 'joint') {
       commitScenarioEdit((scenario) => {
         const body = scenario.bodies.find((candidate) => candidate.id === proposal.movingOwnerId)
@@ -489,7 +613,39 @@ export function useSimulation(initialPreset = 'projectile-motion') {
   const updateConstraint = useCallback((id, changes) => commitScenarioEdit((scenario) => { scenario.constraints = scenario.constraints.map((item) => item.id === id ? { ...item, ...changes } : item) }), [commitScenarioEdit])
   const updateForce = useCallback((id, changes) => commitScenarioEdit((scenario) => { scenario.forces = scenario.forces.map((item) => item.id === id ? { ...item, ...changes } : item) }), [commitScenarioEdit])
   const updateInstrument = useCallback((id, changes) => {
-    commitScenarioEdit((scenario) => { scenario.instruments = scenario.instruments.map((instrument) => instrument.id === id ? { ...instrument, ...changes } : instrument) })
+    commitScenarioEdit((scenario) => {
+      const current = scenario.instruments.find((instrument) => instrument.id === id)
+      if (!current?.pairId) {
+        scenario.instruments = scenario.instruments.map((instrument) => instrument.id === id ? { ...instrument, ...changes } : instrument)
+        return
+      }
+      const dx = changes.center ? changes.center.x - current.center.x : 0
+      const dy = changes.center ? changes.center.y - current.center.y : 0
+      scenario.instruments = scenario.instruments.map((instrument) => {
+        if (instrument.pairId !== current.pairId) return instrument
+        const grouped = {
+          ...instrument,
+          ...(changes.targetBodyId !== undefined ? { targetBodyId: changes.targetBodyId } : {}),
+          ...(changes.nominalSpacing !== undefined ? { nominalSpacing: changes.nominalSpacing } : {}),
+          ...(changes.angle !== undefined ? { angle: changes.angle } : {}),
+          ...(changes.length !== undefined ? { length: changes.length } : {}),
+          ...(changes.resolution !== undefined ? { resolution: changes.resolution } : {}),
+          ...(changes.noiseEnabled !== undefined ? { noiseEnabled: changes.noiseEnabled } : {}),
+          ...(changes.noiseSigma !== undefined ? { noiseSigma: changes.noiseSigma } : {}),
+        }
+        if (changes.center) grouped.center = { x: instrument.center.x + dx, y: instrument.center.y + dy }
+        if (instrument.id === id) Object.assign(grouped, changes)
+        return grouped
+      })
+      if (changes.nominalSpacing !== undefined || changes.angle !== undefined) {
+        const a = scenario.instruments.find((instrument) => instrument.pairId === current.pairId && instrument.pairRole === 'A')
+        const b = scenario.instruments.find((instrument) => instrument.pairId === current.pairId && instrument.pairRole === 'B')
+        if (a && b) {
+          const spacing = changes.nominalSpacing ?? a.nominalSpacing
+          b.center = { x: a.center.x + Math.sin(a.angle) * spacing, y: a.center.y - Math.cos(a.angle) * spacing }
+        }
+      }
+    })
     setSelectedId(id)
   }, [commitScenarioEdit])
   const removeForce = useCallback((id) => commitScenarioEdit((scenario) => { scenario.forces = scenario.forces.filter((item) => item.id !== id) }), [commitScenarioEdit])
@@ -497,6 +653,7 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   const removeEntity = useCallback((id) => {
     if (worldRef.current.bodies.length <= 1 && worldRef.current.bodies.some((body) => body.id === id)) return
+    const removedInstrument = worldRef.current.instruments.find((instrument) => instrument.id === id)
     commitScenarioEdit((scenario) => {
       scenario.bodies = scenario.bodies.filter((body) => body.id !== id)
       scenario.tracks = scenario.tracks.filter((track) => track.id !== id)
@@ -506,7 +663,8 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       scenario.ports = scenario.ports.filter((port) => port.ownerId !== id && port.id !== id)
       scenario.joints = scenario.joints.filter((joint) => joint.id !== id && joint.a.ownerId !== id && joint.b.ownerId !== id && joint.a.portId !== id && joint.b.portId !== id)
       scenario.forces = scenario.forces.filter((force) => force.bodyId !== id)
-      scenario.instruments = scenario.instruments.filter((instrument) => instrument.id !== id && instrument.targetBodyId !== id)
+      scenario.instruments = scenario.instruments.filter((instrument) => instrument.id !== id && instrument.targetBodyId !== id && (!removedInstrument?.pairId || instrument.pairId !== removedInstrument.pairId))
+      scenario.railJoins = scenario.railJoins.filter((join) => join.a.ownerId !== id && join.b.ownerId !== id)
     })
   }, [commitScenarioEdit])
 
@@ -521,9 +679,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       } else if (target === 'wheel') {
         scenario.bodies.push(createWheel({ id, position: { x: 0, y: 2.5 } }))
       } else if (target === 'ramp') {
-        scenario.tracks.push(createTrack({ id, center: { x: 0, y: 0 }, angle: Math.PI / 9, length: 6 }))
+        scenario.tracks.push(createTrack({ id, center: { x: 0, y: 0 }, angle: Math.PI / 9, length: 6, ideal: true }))
       } else if (['spline', 'loop', 'hill', 'valley'].includes(target)) {
-        scenario.tracks.push(createSplineTrack({ id, name: target === 'spline' ? 'Custom spline' : `${target[0].toUpperCase()}${target.slice(1)} track`, template: target === 'spline' ? 'blank' : target }))
+        scenario.tracks.push(createSplineTrack({ id, name: target === 'spline' ? 'Custom spline' : `${target[0].toUpperCase()}${target.slice(1)} track`, template: target === 'spline' ? 'blank' : target, ideal: true }))
       } else if (target === 'spring' || target === 'rope') {
         const body = scenario.bodies.find((candidate) => candidate.id === selectedRef.current) ?? scenario.bodies[0]
         scenario.connectors.push(createConnector(target, { id, a: { type: 'world', position: { x: body.position.x - 2.5, y: body.position.y + 1 } }, b: { type: 'port', ownerId: body.id, portId: `${body.id}:center` }, length: 2.5, restLength: 2.5 }))
@@ -546,13 +704,20 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         scenario.instruments.push(createInstrument(target, target === 'ruler'
           ? { id, name: `Ruler ${index + 1}`, a: { x: -2, y: 1 + index * 0.35 }, b: { x: 2, y: 1 + index * 0.35 } }
           : { id, name: `Photogate ${index + 1}`, center: { x: -1 + index * 2, y: 1 }, angle: Math.PI / 2, targetBodyId: targetBody.id }))
+      } else if (target === 'photogateAssembly') {
+        const pairId = nextId('photogate-pair')
+        const targetBody = scenario.bodies.find((body) => body.id === selectedRef.current) ?? scenario.bodies[0]
+        scenario.instruments.push(
+          createInstrument('photogate', { id: `${id}-a`, name: 'Photogate assembly A', center: { x: -0.5, y: 1 }, angle: Math.PI / 2, targetBodyId: targetBody.id, pairId, pairRole: 'A', nominalSpacing: 1 }),
+          createInstrument('photogate', { id: `${id}-b`, name: 'Photogate assembly B', center: { x: 0.5, y: 1 }, angle: Math.PI / 2, targetBodyId: targetBody.id, pairId, pairRole: 'B', nominalSpacing: 1 }),
+        )
       }
     })
-    if (!['gravity', 'floor'].includes(target)) setSelectedId(id)
+    if (!['gravity', 'floor'].includes(target)) setSelectedId(target === 'photogateAssembly' ? `${id}-a` : id)
   }, [commitScenarioEdit])
 
   const moveEntity = useCallback((id, position) => {
-    if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position, velocity: { x: 0, y: 0 } })
+    if (worldRef.current.bodies.some((body) => body.id === id)) updateBody(id, { position })
     else if (worldRef.current.tracks.some((track) => track.id === id)) {
       const track = worldRef.current.tracks.find((candidate) => candidate.id === id)
       if (track.type === 'spline') {
@@ -567,15 +732,19 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   const alignInstrument = useCallback((instrumentId, radius = 0.6) => {
     const instrument = worldRef.current.instruments.find((candidate) => candidate.id === instrumentId)
-    if (!instrument || !worldRef.current.tracks.length) return false
+    const bodyRails = worldRef.current.bodies
+      .filter((body) => body.shape === 'beam' && body.mode === 'track')
+      .map((beam) => ({ ...beam, type: 'segment', center: beam.position, bodyRail: true }))
+    const alignmentRails = [...worldRef.current.tracks, ...bodyRails]
+    if (!instrument || !alignmentRails.length) return false
     const origin = instrument.center ?? { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 }
     let best = null
-    for (const track of worldRef.current.tracks) {
+    for (const track of alignmentRails) {
       if (track.type === 'spline') {
         const samples = track._samples ?? sampleSpline(track)
         for (const sample of samples) {
           const distance = Math.hypot(sample.position.x - origin.x, sample.position.y - origin.y)
-          if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent: sample.tangent, point: sample.position, distance, angle: Math.atan2(sample.tangent.y, sample.tangent.x) }
+          if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent: sample.tangent, point: sample.position, coordinate: sample.distance, distance, angle: Math.atan2(sample.tangent.y, sample.tangent.x) }
         }
         continue
       }
@@ -585,17 +754,52 @@ export function useSimulation(initialPreset = 'projectile-motion') {
       const along = Math.max(-track.length / 2, Math.min(track.length / 2, relative.x * tangent.x + relative.y * tangent.y))
       const point = { x: track.center.x + tangent.x * along + normal.x * track.thickness / 2, y: track.center.y + tangent.y * along + normal.y * track.thickness / 2 }
       const distance = Math.hypot(point.x - origin.x, point.y - origin.y)
-      if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent, point, distance, angle: track.angle }
+      if (distance <= radius && (!best || distance < best.distance)) best = { track, tangent, point, coordinate: along + track.length / 2, distance, angle: track.angle }
     }
     if (!best) return false
-    if (instrument.type === 'photogate') updateInstrument(instrument.id, { center: best.point, angle: best.angle + Math.PI / 2 })
+    if (instrument.type === 'photogate' && instrument.pairId) {
+      const trackLength = best.track.type === 'spline' ? (best.track._samples ?? sampleSpline(best.track)).at(-1)?.distance ?? 0 : best.track.length
+      const spacing = Math.min(instrument.nominalSpacing, trackLength)
+      const requestedStart = instrument.pairRole === 'A' ? best.coordinate : best.coordinate - spacing
+      const startCoordinate = Math.max(0, Math.min(Math.max(0, trackLength - spacing), requestedStart))
+      const pointAt = (distance) => {
+        if (best.track.type === 'spline') return splinePointAtDistance(best.track, distance)
+        const clamped = Math.max(0, Math.min(best.track.length, distance))
+        const tangent = { x: Math.cos(best.track.angle), y: Math.sin(best.track.angle) }
+        const normal = { x: -tangent.y, y: tangent.x }
+        return {
+          position: {
+            x: best.track.center.x + tangent.x * (clamped - best.track.length / 2) + normal.x * best.track.thickness / 2,
+            y: best.track.center.y + tangent.y * (clamped - best.track.length / 2) + normal.y * best.track.thickness / 2,
+          },
+          tangent,
+          distance: clamped,
+        }
+      }
+      const aPoint = pointAt(startCoordinate)
+      const bPoint = pointAt(startCoordinate + spacing)
+      commitScenarioEdit((scenario) => {
+        scenario.instruments = scenario.instruments.map((candidate) => {
+          if (candidate.pairId !== instrument.pairId) return candidate
+          const point = candidate.pairRole === 'A' ? aPoint : bPoint
+          return {
+            ...candidate,
+            center: point.position,
+            angle: Math.atan2(point.tangent.y, point.tangent.x) + Math.PI / 2,
+            nominalSpacing: spacing,
+            trackId: best.track.bodyRail ? null : best.track.id,
+            trackDistance: point.distance,
+          }
+        })
+      })
+    } else if (instrument.type === 'photogate') updateInstrument(instrument.id, { center: best.point, angle: best.angle + Math.PI / 2, trackId: best.track.bodyRail ? null : best.track.id, trackDistance: best.coordinate })
     else {
       const readingLength = Math.hypot(instrument.b.x - instrument.a.x, instrument.b.y - instrument.a.y)
       updateInstrument(instrument.id, { a: { x: best.point.x - best.tangent.x * readingLength / 2, y: best.point.y - best.tangent.y * readingLength / 2 }, b: { x: best.point.x + best.tangent.x * readingLength / 2, y: best.point.y + best.tangent.y * readingLength / 2 } })
     }
     setSnapFeedback(`Measurement alignment: ${instrument.name} aligned to ${best.track.name}; no physical connection was created.`)
     return true
-  }, [updateInstrument])
+  }, [commitScenarioEdit, updateInstrument])
 
   const placeBodyAtStart = useCallback((trackId, bodyId = selectedRef.current) => {
     const track = worldRef.current.tracks.find((candidate) => candidate.id === trackId)
@@ -627,19 +831,106 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   const applyActions = useCallback((actions) => {
     const preset = actions.find((action) => action.type === 'load_preset')
-    if (preset) { loadPreset(preset.target); return }
-    actions.forEach((action) => {
-      if (action.type === 'add_body') addElement(action.target)
+    if (preset) {
+      loadPreset(preset.target)
+    }
+    const remaining = preset ? actions.filter((action) => action !== preset) : actions
+    remaining.forEach((action) => {
+      if (action.type === 'add_body') {
+        commitScenarioEdit((scenario) => {
+          const isBox = action.target === 'box'
+          const shape = 'circle'
+          const radius = 0.28
+          if (scenario.bodies.length > 0) {
+            const body = scenario.bodies[0]
+            body.name = isBox ? 'Particle M' : 'Sphere'
+            body.shape = 'circle'
+            body.radius = radius
+            body.friction = 0
+            body.restitution = 0
+            body.color = '#f2cf00'
+            const track = scenario.tracks.find((t) => t.type === 'spline')
+            if (track) {
+              const point = splinePointAtDistance(track, 0)
+              if (point) {
+                body.position = { x: point.position.x + point.normal.x * radius, y: point.position.y + point.normal.y * radius }
+                body.velocity = { x: 0, y: 0 }
+              }
+            }
+          } else {
+            const id = nextId(action.target)
+            const track = scenario.tracks.find((t) => t.type === 'spline')
+            const point = track ? splinePointAtDistance(track, 0) : null
+            const pos = point ? { x: point.position.x + point.normal.x * radius, y: point.position.y + point.normal.y * radius } : { x: 0, y: 2.5 }
+            scenario.bodies.push(createBody({ id, name: isBox ? 'Particle M' : 'Sphere', shape: 'circle', radius, position: pos, friction: 0, restitution: 0, color: '#f2cf00' }))
+          }
+        })
+      }
+      if (action.type === 'update_body') {
+        commitScenarioEdit((scenario) => {
+          const body = scenario.bodies.find((b) => b.id === action.entityId || b.name === action.name || b.id === action.target) || scenario.bodies[0]
+          if (!body) return
+          if (action.name) body.name = action.name
+          if (typeof action.value === 'number') body.mass = action.value
+          if (typeof action.mass === 'number') body.mass = action.mass
+          if (typeof action.vx === 'number') body.velocity = { ...body.velocity, x: action.vx }
+          if (typeof action.vy === 'number') body.velocity = { ...body.velocity, y: action.vy }
+          if (typeof action.x === 'number') body.position = { ...body.position, x: action.x }
+          if (typeof action.y === 'number') body.position = { ...body.position, y: action.y }
+          if (typeof action.restitution === 'number') body.restitution = action.restitution
+          if (typeof action.friction === 'number') body.friction = action.friction
+        })
+      }
       if (action.type === 'add_track' || action.type === 'add_constraint' && action.target === 'ramp') addElement('ramp')
       if (action.type === 'add_spline_track') {
-        const track = createSplineTrack({ ...action.track, type: 'spline', id: action.track?.id ?? nextId('spline') })
-        commitScenarioEdit((scenario) => { scenario.tracks.push(track) })
+        const track = createSplineTrack({ ideal: true, friction: 0, restitution: 0, ...action.track, type: 'spline', id: action.track?.id ?? nextId('spline') })
+        commitScenarioEdit((scenario) => {
+          scenario.tracks = [track]
+          if (scenario.bodies.length > 0) {
+            const body = scenario.bodies[0]
+            const point = splinePointAtDistance(track, 0)
+            if (point) {
+              body.position = { x: point.position.x + point.normal.x * (body.radius ?? 0.3), y: point.position.y + point.normal.y * (body.radius ?? 0.3) }
+              body.velocity = { x: 0, y: 0 }
+              body.friction = 0
+              body.restitution = 0
+            }
+          }
+        })
       }
       if (action.type === 'add_beam') addElement('beam')
       if (action.type === 'add_wheel' || action.type === 'add_body' && action.target === 'wheel') addElement('wheel')
-      if (action.type === 'add_connector' || action.type === 'add_force' && ['spring', 'rope'].includes(action.target)) addElement(action.target)
+      if (action.type === 'add_connector' || action.type === 'add_force' && ['spring', 'rope'].includes(action.target)) {
+        addElement(action.target)
+        if (action.unattached !== undefined || action.attached !== undefined || action.connectorMode) {
+          commitScenarioEdit((scenario) => {
+            const targetConnector = scenario.connectors[scenario.connectors.length - 1]
+            if (targetConnector) {
+              const isUnattached = action.unattached ?? (action.attached === false || action.connectorMode === 'push')
+              targetConnector.unattached = isUnattached
+              targetConnector.attached = !isUnattached
+              targetConnector.mode = isUnattached ? 'push' : 'pull-push'
+            }
+          })
+        }
+      }
+      if (action.type === 'update_connector') {
+        commitScenarioEdit((scenario) => {
+          scenario.connectors = scenario.connectors.map((c) => {
+            if (action.entityId && c.id !== action.entityId) return c
+            const isUnattached = action.unattached ?? (action.attached === false || action.connectorMode === 'push')
+            return {
+              ...c,
+              unattached: isUnattached,
+              attached: !isUnattached,
+              mode: isUnattached ? 'push' : 'pull-push',
+              stiffness: typeof action.value === 'number' ? action.value : c.stiffness,
+            }
+          })
+        })
+      }
       if (action.type === 'add_port') addElement('attachment')
-      if (action.type === 'add_instrument' && ['ruler', 'photogate'].includes(action.target)) addElement(action.target)
+      if (action.type === 'add_instrument' && ['ruler', 'photogate', 'photogateAssembly'].includes(action.target)) addElement(action.target)
       if (action.type === 'add_joint') {
         if (!action.entityId || !action.portId || !action.otherEntityId || !action.otherPortId || !['rigid', 'pin'].includes(action.target)) throw new TypeError('A joint action requires two exact entity/port references and a rigid or pin type.')
         commitScenarioEdit((scenario) => { scenario.joints.push({ id: nextId(action.target), type: action.target, a: { type: 'port', ownerId: action.entityId, portId: action.portId }, b: { type: 'port', ownerId: action.otherEntityId, portId: action.otherPortId } }) })
@@ -648,6 +939,19 @@ export function useSimulation(initialPreset = 'projectile-motion') {
         if (!action.entityId || !['a', 'b'].includes(action.endpoint) || !action.otherEntityId || !action.otherPortId) throw new TypeError('A connector action requires an exact connector, endpoint, owner, and port.')
         updateConnector(action.entityId, { [action.endpoint]: { type: 'port', ownerId: action.otherEntityId, portId: action.otherPortId } })
       }
+      if (action.type === 'add_event') {
+        const evt = action.event ?? {
+          id: `evt-${crypto.randomUUID()}`,
+          trigger: action.trigger ?? 'apex',
+          type: action.eventType ?? 'explosion',
+          targetId: action.targetId ?? worldRef.current.bodies[0]?.id,
+          ratio: action.ratio ?? 0.25,
+          impulseX: action.impulseX ?? 5,
+        }
+        commitScenarioEdit((scenario) => {
+          scenario.events = [...(scenario.events ?? []), evt]
+        })
+      }
       if (action.type === 'add_constraint' && action.target === 'floor' && !worldRef.current.constraints.some((constraint) => constraint.type === 'ground')) addElement('floor')
       if (action.type === 'remove_constraint' && action.target === 'floor') commitScenarioEdit((scenario) => { scenario.constraints = scenario.constraints.filter((constraint) => constraint.type !== 'ground') })
       if (action.target === 'gravity') updateGravity({ enabled: !['remove_force', 'disable_gravity'].includes(action.type), g: action.value ?? worldRef.current.gravity.g })
@@ -655,10 +959,10 @@ export function useSimulation(initialPreset = 'projectile-motion') {
     })
   }, [addElement, commitScenarioEdit, loadPreset, updateConnector, updateGravity])
 
-  const selectedBody = useMemo(() => world.bodies.find((body) => body.id === selectedId) ?? world.bodies[0], [selectedId, world.bodies])
-  const selectedEntity = useMemo(() => world.bodies.find((item) => item.id === selectedId) ?? world.tracks.find((item) => item.id === selectedId) ?? world.connectors.find((item) => item.id === selectedId) ?? world.ports.find((item) => item.id === selectedId) ?? selectedBody, [selectedBody, selectedId, world.bodies, world.connectors, world.ports, world.tracks])
+  const selectedBody = useMemo(() => selectedId ? (world.bodies.find((body) => body.id === selectedId) ?? null) : null, [selectedId, world.bodies])
+  const selectedEntity = useMemo(() => selectedId ? (world.bodies.find((item) => item.id === selectedId) ?? world.tracks.find((item) => item.id === selectedId) ?? world.connectors.find((item) => item.id === selectedId) ?? world.ports.find((item) => item.id === selectedId) ?? null) : null, [selectedId, world.bodies, world.connectors, world.ports, world.tracks])
   const selectedConnectorState = useMemo(() => selectedEntity?.a ? connectorState(world, selectedEntity) : null, [selectedEntity, world])
-  const selectedLoadState = useMemo(() => bodyLoadState(world, selectedBody.id), [selectedBody.id, world])
+  const selectedLoadState = useMemo(() => selectedBody?.id ? bodyLoadState(world, selectedBody.id) : null, [selectedBody, world])
   const eligibleWheels = useMemo(() => world.bodies.filter((body) => body.shape === 'wheel' && wheelCenterMount(world, body)?.fixed && !world.connectors.some((connector) => connector.id !== selectedEntity?.id && connector.route?.wheelId === body.id)), [selectedEntity?.id, world])
   const connectionPortLabel = useMemo(() => {
     const port = connectionPortId && world.portIndex.get(connectionPortId)
@@ -667,8 +971,9 @@ export function useSimulation(initialPreset = 'projectile-motion') {
 
   return {
     world, scenario: worldToScenario(world), selectedBody, selectedEntity, selectedConnectorState, selectedLoadState, eligibleWheels, selectedId, setSelectedId, connectionPortId, connectionPortLabel, snapProposal, snapFeedback, dragSnapCandidate,
-    running, setRunning, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
+    running, setRunning, reversing, canReverse: Boolean(reversing || (world.time > 0.001 && worldSnapshotsRef.current.length > 0)), toggleReverse, runError, speed, setSpeed, history, loadPreset, replaceScenario, reset, stepOnce,
     recordingStatus, pendingTrial, notebook, armTrial, discardTrial, savePendingTrial, deleteTrial,
+    canUndo: undoStack.length > 0, canRedo: redoStack.length > 0, undo, redo,
     updateBody, updateTrack, updateConnector, routeConnector, updateInstrument, moveAssemblyPart, requestBodySnap, clearBodySnap, moveConnectorEndpoint, requestConnectorSnap, requestTrackSnap, confirmSnap, cancelSnap, disconnectConnector, updatePort, pinPortToWorld, connectPort, updateGravity, updateForce, removeForce, updateConstraint, removeConstraint,
     addElement, applyActions, removeBody: removeEntity, removeEntity, moveEntity, moveConstraint: moveEntity, alignInstrument, placeBodyAtStart, prepareOrbit,
   }

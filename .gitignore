@@ -22,3 +22,26 @@ Thumbs.db
 # Rust/Wasm build outputs
 target/
 pkg/
+
+# Internal dev / agent workspace (not for public repo)
+.cursor/
+
+# OpenAI API reference dumps (local dev only)
+ModelSetup/
+
+# Copyrighted exam materials and extracts (keep local for demo prep)
+APPhysics1FRQ2026/
+frq-extract.txt
+scripts/extract-frq.py
+
+# Demo prep (local only — scripts, screenshots, plans)
+demo/
+
+# Internal engineering postmortem (local until submission copy is ready)
+docs/vector_failure_analysis.md
+
+# Probe/debug output
+scripts/probe-out.txt
+
+# Internal audit notes
+docs/audit_report2.md

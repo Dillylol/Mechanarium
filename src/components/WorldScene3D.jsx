@@ -3,12 +3,17 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { bodyLoadState, resolveEndpoint, wheelRouteGeometry } from '../physics/assembly.js'
 import { sampleSpline } from '../domain/spline.js'
+import { rulerReading } from '../domain/instruments.js'
+import { bodyEnergy } from '../physics/metrics.js'
 
 function disposeObject(object) {
   object.traverse((child) => {
     child.geometry?.dispose()
     if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose())
-    else child.material?.dispose()
+    else {
+      child.material?.map?.dispose()
+      child.material?.dispose()
+    }
   })
 }
 
@@ -93,6 +98,50 @@ function torqueArrow(body, torque) {
   return group
 }
 
+function textSprite(text, color = '#111111', width = 2.2, height = 0.42) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 96
+  const context = canvas.getContext('2d')
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = 'rgba(250,250,247,0.92)'
+  context.fillRect(4, 4, canvas.width - 8, canvas.height - 8)
+  context.strokeStyle = '#111111'
+  context.lineWidth = 3
+  context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8)
+  context.fillStyle = color
+  context.font = '600 34px Inter, Arial, sans-serif'
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.fillText(text, canvas.width / 2, canvas.height / 2)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }))
+  sprite.scale.set(width, height, 1)
+  sprite.renderOrder = 50
+  sprite.raycast = () => {}
+  sprite.userData = { canvas, context, texture, color }
+  return sprite
+}
+
+function updateTextSprite(sprite, text, color) {
+  const { canvas, context, texture, color: defaultColor } = sprite.userData ?? {}
+  if (!canvas || !context || !texture) return
+  const textColor = color ?? defaultColor ?? '#111111'
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = 'rgba(250,250,247,0.92)'
+  context.fillRect(4, 4, canvas.width - 8, canvas.height - 8)
+  context.strokeStyle = '#111111'
+  context.lineWidth = 3
+  context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8)
+  context.fillStyle = textColor
+  context.font = '600 34px Inter, Arial, sans-serif'
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.fillText(text, canvas.width / 2, canvas.height / 2)
+  texture.needsUpdate = true
+}
+
 function addTransformGizmos(group, entity, center) {
   const tangent = { x: Math.cos(entity.angle), y: Math.sin(entity.angle) }
   const angleHandle = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.055, 10, 24), new THREE.MeshBasicMaterial({ color: 0xf2cf00 }))
@@ -131,6 +180,20 @@ function addSplineGizmos(group, track) {
   }
 }
 
+function railEndpointPosition(world, endpoint) {
+  const owner = [...world.bodies, ...world.tracks].find((candidate) => candidate.id === endpoint.ownerId)
+  if (!owner) return null
+  if (owner.type === 'spline') return { ...(endpoint.endpoint === 'start' ? owner.knots[0].position : owner.knots.at(-1).position) }
+  const center = owner.center ?? owner.position
+  const tangent = { x: Math.cos(owner.angle), y: Math.sin(owner.angle) }
+  const normal = { x: -tangent.y, y: tangent.x }
+  const sign = endpoint.endpoint === 'start' ? -1 : 1
+  return {
+    x: center.x + tangent.x * owner.length / 2 * sign + normal.x * owner.thickness / 2,
+    y: center.y + tangent.y * owner.length / 2 * sign + normal.y * owner.thickness / 2,
+  }
+}
+
 export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, onDisconnect, onNudge, onDelete, onToggle, running, history, overlays, snapProposal, dragSnapCandidate }) {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
@@ -145,6 +208,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
   const portArtifactsRef = useRef(new Map())
   const endpointHandlesRef = useRef(new Map())
   const trailRef = useRef(null)
+  const dimensionOverlayRef = useRef(null)
   const gridRef = useRef(null)
   const [draggedPartId, setDraggedPartId] = useState(null)
   const handlersRef = useRef({ onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running })
@@ -156,12 +220,15 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     connectors: world.connectors.map((connector) => ({ id: connector.id, name: connector.name, type: connector.type, a: connector.a, b: connector.b, length: connector.length, restLength: connector.restLength, stiffness: connector.stiffness, damping: connector.damping, route: connector.route })),
     forces: world.forces,
     instruments: world.instruments,
+    dimensions: overlays.dimensions,
+    height: overlays.height,
     ports: world.ports,
+    railJoins: world.railJoins,
     snapProposal,
     dragSnapCandidate,
     draggedPartId,
     selectedBeam: running ? null : world.bodies.find((body) => body.id === selectedId && body.shape === 'beam'),
-  }), [draggedPartId, dragSnapCandidate, running, selectedId, snapProposal, world.bodies, world.connectors, world.forces, world.instruments, world.ports, world.tracks])
+  }), [draggedPartId, dragSnapCandidate, overlays.dimensions, overlays.height, running, selectedId, snapProposal, world.bodies, world.connectors, world.forces, world.instruments, world.ports, world.railJoins, world.tracks])
 
   useEffect(() => {
     handlersRef.current = { onSelect, onMove, onRequestBodySnap, onClearBodySnap, onMoveConstraint, onMoveForce, onMoveInstrument, onAlignInstrument, onRequestTrackSnap, onTransform, onMoveConnectorEndpoint, onRequestConnectorSnap, running }
@@ -260,19 +327,30 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     const pointerDown = (event) => {
       setPointer(event)
       const hits = raycaster.intersectObjects([...bodiesRef.current.values(), ...constraintsRef.current.children, ...forceArtifactsRef.current.children], true)
-      const bodyId = hits[0]?.object?.userData?.bodyId
-      const constraintId = hits[0]?.object?.userData?.constraintId ?? hits[0]?.object?.userData?.entityId
-      const connectorId = hits[0]?.object?.userData?.connectorId
-      const forceId = hits[0]?.object?.userData?.forceId
-      const instrumentId = hits[0]?.object?.userData?.instrumentId
+      const resolvedHits = hits.map((hit) => {
+        let object = hit.object
+        while (object && !['gizmo', 'endpoint', 'bodyId', 'constraintId', 'entityId', 'connectorId', 'forceId', 'instrumentId'].some((key) => object.userData?.[key])) object = object.parent
+        return object ? { hit, object, data: object.userData } : null
+      }).filter(Boolean)
+      const picked = ['gizmo', 'endpoint', 'bodyId', 'instrumentId', 'constraintId', 'entityId', 'connectorId', 'forceId']
+        .map((key) => resolvedHits.find((candidate) => candidate.data[key]))
+        .find(Boolean)
+      if (!picked) return
+      const data = picked.data
+      const bodyId = data.bodyId
+      const constraintId = data.constraintId ?? data.entityId
+      const connectorId = data.connectorId
+      const forceId = data.forceId
+      const instrumentId = data.instrumentId
       if (bodyId || constraintId || connectorId || forceId || instrumentId) handlersRef.current.onSelect(bodyId ?? constraintId ?? connectorId ?? forceId ?? instrumentId)
-      if (hits[0]?.object?.userData?.gizmo && !handlersRef.current.running) {
-        draggingGizmo = hits[0].object.userData
+      else handlersRef.current.onSelect(null)
+      if (data.gizmo && !handlersRef.current.running) {
+        draggingGizmo = data
         controls.enabled = false
         return
       }
-      if (hits[0]?.object?.userData?.endpoint && !handlersRef.current.running) {
-        draggingEndpoint = hits[0].object.userData
+      if (data.endpoint && !handlersRef.current.running) {
+        draggingEndpoint = data
         controls.enabled = false
         return
       }
@@ -282,24 +360,28 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         controls.enabled = false
         renderer.domElement.setPointerCapture?.(event.pointerId)
       }
-      if (constraintId && hits[0].object.userData.center && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
-        const center = hits[0].object.userData.center
-        draggingConstraint = { id: constraintId, offset: { x: intersection.x - center.x, y: intersection.y - center.y } }
+      if (constraintId && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
+        const track = worldStateRef.current.tracks.find((candidate) => candidate.id === constraintId)
+        const center = data.center ?? (track?.type === 'spline'
+          ? (track._samples ?? sampleSpline(track)).reduce((sum, sample, _index, samples) => ({ x: sum.x + sample.position.x / samples.length, y: sum.y + sample.position.y / samples.length }), { x: 0, y: 0 })
+          : track?.center)
+        if (!center) return
+        draggingConstraint = { id: constraintId, offset: { x: intersection.x - center.x, y: intersection.y - center.y }, snapEligible: track?.type === 'segment' }
         controls.enabled = false
         renderer.domElement.setPointerCapture?.(event.pointerId)
       }
-      if (forceId && hits[0].object.userData.center && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
-        const center = hits[0].object.userData.center
+      if (forceId && data.center && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
+        const center = data.center
         draggingForce = { id: forceId, offset: { x: intersection.x - center.x, y: intersection.y - center.y } }
         controls.enabled = false
         renderer.domElement.setPointerCapture?.(event.pointerId)
       }
       if (instrumentId && !handlersRef.current.running && raycaster.ray.intersectPlane(dragPlane, intersection)) {
         const instrument = worldStateRef.current.instruments.find((candidate) => candidate.id === instrumentId)
-        const center = hits[0].object.userData.center ?? instrument?.center ?? (instrument?.a && instrument?.b ? { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 } : intersection)
+        const center = data.center ?? instrument?.center ?? (instrument?.a && instrument?.b ? { x: (instrument.a.x + instrument.b.x) / 2, y: (instrument.a.y + instrument.b.y) / 2 } : intersection)
         draggingInstrument = {
           id: instrumentId,
-          endpoint: hits[0].object.userData.endpoint,
+          endpoint: data.endpoint,
           offset: { x: intersection.x - center.x, y: intersection.y - center.y },
           a: instrument?.a,
           b: instrument?.b,
@@ -357,8 +439,8 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       if (draggingId && lastPointerPosition) handlersRef.current.onRequestBodySnap(draggingId, snapRadius())
       else if (draggingId) handlersRef.current.onClearBodySnap()
       if (draggingEndpoint && lastPointerPosition) handlersRef.current.onRequestConnectorSnap(draggingEndpoint.connectorId, draggingEndpoint.endpoint, lastPointerPosition, snapRadius())
-      if (draggingConstraint && lastConstraintPosition) handlersRef.current.onRequestTrackSnap(draggingConstraint.id, lastConstraintPosition, snapRadius())
-      if (draggingInstrument && !draggingInstrument.endpoint) handlersRef.current.onAlignInstrument(draggingInstrument.id, snapRadius())
+      if (draggingConstraint?.snapEligible && lastConstraintPosition) handlersRef.current.onRequestTrackSnap(draggingConstraint.id, lastConstraintPosition, snapRadius())
+      if (draggingInstrument && !draggingInstrument.endpoint) handlersRef.current.onAlignInstrument(draggingInstrument.id, Math.max(0.75, snapRadius()))
       draggingId = null
       draggingConstraint = null
       draggingForce = null
@@ -388,6 +470,25 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       for (const [id, arrow] of arrowsRef.current) {
         const mesh = bodiesRef.current.get(id)
         if (mesh) arrow.position.copy(mesh.position)
+      }
+      if (dimensionOverlayRef.current?.dimension && dimensionOverlayRef.current?.label) {
+        const { dimension, label, bodyId } = dimensionOverlayRef.current
+        const selectedMesh = bodiesRef.current.get(bodyId)
+        if (selectedMesh) {
+          const posX = selectedMesh.position.x
+          const posY = selectedMesh.position.y
+          const positions = dimension.geometry.attributes.position
+          positions.setXYZ(0, posX, 0, 0.34)
+          positions.setXYZ(1, posX, posY, 0.34)
+          positions.needsUpdate = true
+          dimension.computeLineDistances()
+          label.position.set(posX + 1.7, posY / 2, 0.6)
+          const liveBody = worldStateRef.current.bodies.find((b) => b.id === bodyId)
+          if (liveBody) {
+            const energy = bodyEnergy({ ...liveBody, position: { x: posX, y: posY } }, worldStateRef.current.gravity, 0)
+            updateTextSprite(label, `h = ${energy.height.toFixed(3)} m`, '#006f9e')
+          }
+        }
       }
       controls.update()
       renderer.render(scene, camera)
@@ -577,6 +678,14 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
     }
     const selectedBeam = renderWorld.bodies.find((body) => body.id === selectedId && body.shape === 'beam')
     if (selectedBeam && !running) addTransformGizmos(group, selectedBeam, selectedBeam.position)
+    for (const join of renderWorld.railJoins) {
+      const point = railEndpointPosition(renderWorld, join.a)
+      if (!point) continue
+      const weld = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.045, 10, 28), new THREE.MeshBasicMaterial({ color: 0x00a965 }))
+      weld.position.set(point.x, point.y, 0.3)
+      weld.userData.entityId = join.a.ownerId
+      group.add(weld)
+    }
 
     for (const force of renderWorld.connectors) {
       if (force.type === 'spring' || force.type === 'rope') {
@@ -615,6 +724,24 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x111111 }))
         line.userData = { instrumentId: instrument.id, center }
         forceGroup.add(line)
+        const reading = rulerReading(instrument)
+        const tangentLength = reading.distance || 1
+        const normal = { x: -reading.dy / tangentLength, y: reading.dx / tangentLength }
+        const ticks = new THREE.Group()
+        const tickCount = Math.max(2, Math.min(20, Math.round(reading.distance)))
+        for (let index = 0; index <= tickCount; index += 1) {
+          const fraction = index / tickCount
+          const point = { x: instrument.a.x + reading.dx * fraction, y: instrument.a.y + reading.dy * fraction }
+          const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(point.x - normal.x * 0.08, point.y - normal.y * 0.08, 0.2),
+            new THREE.Vector3(point.x + normal.x * 0.08, point.y + normal.y * 0.08, 0.2),
+          ]), new THREE.LineBasicMaterial({ color: selected ? 0xf2cf00 : 0x111111 }))
+          ticks.add(tick)
+        }
+        const label = textSprite(`${reading.distance.toFixed(3)} m`)
+        label.position.set(center.x + normal.x * 0.38, center.y + normal.y * 0.38, 0.5)
+        label.userData = { instrumentId: instrument.id, center }
+        forceGroup.add(ticks, label)
         if (!running) for (const endpoint of ['a', 'b']) {
           const handle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 9), new THREE.MeshBasicMaterial({ color: endpoint === 'a' ? 0xf2cf00 : 0x00a965 }))
           handle.position.set(instrument[endpoint].x, instrument[endpoint].y, 0.24)
@@ -632,6 +759,75 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
         hub.position.set(instrument.center.x, instrument.center.y, 0.24)
         hub.userData = { instrumentId: instrument.id, center: instrument.center }
         forceGroup.add(hub)
+        if (instrument.pairId && instrument.pairRole === 'A') {
+          const paired = renderWorld.instruments.find((candidate) => candidate.pairId === instrument.pairId && candidate.pairRole === 'B')
+          if (paired) {
+            const pairedTangent = { x: Math.cos(paired.angle), y: Math.sin(paired.angle) }
+            const bracketPoints = [
+              new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.16),
+              new THREE.Vector3(instrument.center.x + tangent.x * half, instrument.center.y + tangent.y * half, 0.16),
+              new THREE.Vector3(instrument.center.x - tangent.x * half, instrument.center.y - tangent.y * half, 0.16),
+              new THREE.Vector3(paired.center.x - pairedTangent.x * paired.length / 2, paired.center.y - pairedTangent.y * paired.length / 2, 0.16),
+              new THREE.Vector3(paired.center.x - pairedTangent.x * paired.length / 2, paired.center.y - pairedTangent.y * paired.length / 2, 0.16),
+              new THREE.Vector3(paired.center.x + pairedTangent.x * paired.length / 2, paired.center.y + pairedTangent.y * paired.length / 2, 0.16),
+            ]
+            const bracket = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(bracketPoints), new THREE.LineBasicMaterial({ color: selected || paired.id === selectedId ? 0xf2cf00 : 0x444444 }))
+            bracket.userData = { instrumentId: instrument.id, center: instrument.center }
+            forceGroup.add(bracket)
+            const bracketA = bracketPoints[2]
+            const bracketB = bracketPoints[3]
+            const bracketDx = bracketB.x - bracketA.x
+            const bracketDy = bracketB.y - bracketA.y
+            const bracketLength = Math.hypot(bracketDx, bracketDy)
+            const grip = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.2, bracketLength), 0.12, 0.14), new THREE.MeshBasicMaterial({ color: selected || paired.id === selectedId ? 0xf2cf00 : 0x006f55 }))
+            grip.position.set((bracketA.x + bracketB.x) / 2, (bracketA.y + bracketB.y) / 2, 0.17)
+            grip.rotation.z = Math.atan2(bracketDy, bracketDx)
+            grip.userData = { instrumentId: instrument.id, center: instrument.center }
+            forceGroup.add(grip)
+            const spacing = textSprite(`${instrument.nominalSpacing.toFixed(3)} m · A→B`, '#006f55', 1.8, 0.34)
+            spacing.position.set((instrument.center.x + paired.center.x) / 2, (instrument.center.y + paired.center.y) / 2 + 0.48, 0.52)
+            spacing.userData = { instrumentId: instrument.id, center: instrument.center }
+            forceGroup.add(spacing)
+          }
+        }
+      }
+    }
+    dimensionOverlayRef.current = null
+    if (overlays.height) {
+      const selectedBody = renderWorld.bodies.find((body) => body.id === selectedId)
+      if (selectedBody) {
+        const datum = 0
+        const dimension = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(selectedBody.position.x, datum, 0.34),
+          new THREE.Vector3(selectedBody.position.x, selectedBody.position.y, 0.34),
+        ]), new THREE.LineDashedMaterial({ color: 0x006f9e, dashSize: 0.16, gapSize: 0.1 }))
+        dimension.computeLineDistances()
+        const energy = bodyEnergy(selectedBody, renderWorld.gravity, datum)
+        const label = textSprite(`h = ${energy.height.toFixed(3)} m`, '#006f9e')
+        label.position.set(selectedBody.position.x + 1.7, (datum + selectedBody.position.y) / 2, 0.6)
+        forceGroup.add(dimension, label)
+        dimensionOverlayRef.current = { dimension, label, bodyId: selectedBody.id }
+      }
+    }
+    if (overlays.dimensions) {
+      const loopTrack = renderWorld.tracks.find((track) => track.id === 'loop-track' && track.type === 'spline')
+      if (loopTrack) {
+        const samples = loopTrack._samples ?? sampleSpline(loopTrack)
+        const loopSamples = samples.filter((sample) => sample.position.x > -2.5)
+        if (loopSamples.length) {
+          const minY = Math.min(...loopSamples.map((sample) => sample.position.y))
+          const maxY = Math.max(...loopSamples.map((sample) => sample.position.y))
+          const centerX = loopSamples.reduce((sum, sample) => sum + sample.position.x, 0) / loopSamples.length
+          const centerY = (minY + maxY) / 2
+          const radius = (maxY - minY) / 2
+          const radiusLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(centerX, centerY, 0.36),
+            new THREE.Vector3(centerX, maxY, 0.36),
+          ]), new THREE.LineBasicMaterial({ color: 0x7a3db8 }))
+          const radiusLabel = textSprite(`R = ${radius.toFixed(3)} m · D = ${(2 * radius).toFixed(3)} m`, '#7a3db8')
+          radiusLabel.position.set(centerX + 1.65, centerY + radius / 2, 0.6)
+          forceGroup.add(radiusLine, radiusLabel)
+        }
       }
     }
     if (!running) for (const port of renderWorld.ports) {
@@ -657,7 +853,7 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       }
       portArtifactsRef.current.set(port.id, { marker, halo })
     }
-  }, [assemblyRenderKey, dragSnapCandidate?.sourcePortId, dragSnapCandidate?.targetPortId, draggedPartId, running, selectedId, snapProposal])
+  }, [assemblyRenderKey, dragSnapCandidate?.sourcePortId, dragSnapCandidate?.targetPortId, draggedPartId, overlays.dimensions, overlays.height, running, selectedId, snapProposal])
 
   useEffect(() => {
     for (const force of world.connectors) {
@@ -666,15 +862,32 @@ export default function WorldScene3D({ world, selectedId, onSelect, onMove, onRe
       const b = resolveEndpoint(world, force.b)
       if (!spring || !a || !b) continue
       const positions = spring.geometry.getAttribute('position')
+      let posA = a.position
+      let posB = b.position
+      const isUnattached = force.unattached || force.attached === false || force.mode === 'push'
+      if (isUnattached && force.restLength) {
+        const dx = b.position.x - a.position.x
+        const dy = b.position.y - a.position.y
+        const dist = Math.hypot(dx, dy)
+        if (dist > force.restLength && dist > 1e-6) {
+          posB = {
+            x: a.position.x + (dx / dist) * force.restLength,
+            y: a.position.y + (dy / dist) * force.restLength,
+          }
+        }
+      }
       const route = wheelRouteGeometry(world, force, 28)
-      const points = route?.points ?? [a.position, b.position]
+      const points = route?.points ?? [posA, posB]
       points.forEach((point, index) => positions.setXYZ(index, point.x, point.y, 0))
       spring.geometry.setDrawRange(0, points.length)
       positions.needsUpdate = true
       spring.geometry.computeBoundingSphere()
       for (const [key, endpoint] of [['a', a], ['b', b]]) {
         const handle = endpointHandlesRef.current.get(`${force.id}:${key}`)
-        if (handle) handle.position.set(endpoint.position.x, endpoint.position.y, 0.08)
+        if (handle) {
+          const pos = key === 'b' ? posB : posA
+          handle.position.set(pos.x, pos.y, 0.08)
+        }
       }
     }
     for (const port of world.ports) {

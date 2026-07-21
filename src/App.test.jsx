@@ -1,15 +1,24 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.jsx'
 
 describe('Mechanarium assembly studio', () => {
+  beforeEach(() => localStorage.clear())
   it('opens the 3D world with builder, controls, and data', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: 'Projectile Motion' })).toBeInTheDocument()
     expect(screen.getByRole('application', { name: /three-dimensional physics world/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
     expect(screen.getByRole('complementary', { name: /world data/i })).toHaveTextContent('Total energy')
+  })
+
+  it('lets students hide or show the selected-body height indicator', async () => {
+    const user = userEvent.setup(); render(<App />)
+    const heightIndicator = screen.getByRole('checkbox', { name: 'h indicator' })
+    expect(heightIndicator).toBeChecked()
+    await user.click(heightIndicator)
+    expect(heightIndicator).not.toBeChecked()
   })
 
   it('adds bodies with per-object gravity controls', async () => {
@@ -125,9 +134,14 @@ describe('Mechanarium assembly studio', () => {
   })
 
   it('saves Scenario v4 locally', async () => {
-    const user = userEvent.setup(); render(<App />)
+    const user = userEvent.setup(); const view = render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add Sphere' }))
     await user.click(screen.getByRole('button', { name: 'Save world locally' }))
     expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"version": 4')
+    expect(localStorage.getItem('mechanarium:last-scenario')).toContain('"name": "Sphere"')
+    view.unmount()
+    render(<App />)
+    expect(screen.getAllByText('Sphere').length).toBeGreaterThan(0)
   })
 
   it('applies a natural-language assembly request through the local fallback', async () => {
@@ -168,5 +182,25 @@ describe('Mechanarium assembly studio', () => {
     await user.click(screen.getByRole('button', { name: 'Save trial' }))
     expect(screen.getByText(/A steeper incline/)).toBeInTheDocument()
     requestFrame.mockRestore(); cancelFrame.mockRestore()
+  })
+
+  it('adds a grouped two-plane photogate assembly', async () => {
+    const user = userEvent.setup(); render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add Photogate Assembly' }))
+    await user.click(screen.getByRole('tab', { name: 'Lab' }))
+    expect(screen.getAllByText(/Photogate assembly · plane/)).toHaveLength(2)
+    expect(screen.getAllByRole('spinbutton', { name: 'Assembly spacing (m)' })).toHaveLength(2)
+  })
+
+  it('manages named world saves with explicit delete confirmation', async () => {
+    const user = userEvent.setup(); render(<App />)
+    await user.click(screen.getByRole('tab', { name: 'World' }))
+    await user.type(screen.getByRole('textbox', { name: 'Save name' }), 'Energy lab')
+    await user.click(screen.getByRole('button', { name: 'Save snapshot' }))
+    expect(screen.getByText('Energy lab')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Delete Energy lab' }))
+    expect(screen.getByRole('button', { name: 'Confirm delete Energy lab' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Confirm delete Energy lab' }))
+    expect(screen.queryByText('Energy lab')).not.toBeInTheDocument()
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getPreset } from '../domain/presets.js'
-import { createBody, createSplineTrack } from '../domain/scenario.js'
-import { createSplineKnot, splinePointAtDistance } from '../domain/spline.js'
+import { createBody, createSplineTrack, createWheel } from '../domain/scenario.js'
+import { createSplineKnot, splineLength, splinePointAtDistance } from '../domain/spline.js'
 import { createWorld, stepWorld } from './world.js'
 
 function run(world, seconds, observe = () => {}) {
@@ -64,10 +64,47 @@ describe('spline track contact', () => {
     let maximumTrackCoordinate = 0
     run(createWorld(scenario), 4, (world) => {
       const contact = world.bodies[0]._trackContact
-      if (contact) { hadContact = true; maximumTrackCoordinate = Math.max(maximumTrackCoordinate, contact.distance) }
+      if (contact && !detached) { hadContact = true; maximumTrackCoordinate = Math.max(maximumTrackCoordinate, contact.distance) }
       else if (hadContact) detached = true
     })
     expect(detached).toBe(true)
     expect(maximumTrackCoordinate).toBeLessThan(14)
+  })
+
+  it('runs the prepared roller coaster across its final hill without artificial energy loss', () => {
+    const scenario = getPreset('spline-roller-coaster')
+    const trackLength = splineLength(scenario.tracks[0])
+    let maximumTrackCoordinate = 0
+    let maximumEnergyError = 0
+    run(createWorld(scenario), 12, (world) => {
+      maximumTrackCoordinate = Math.max(maximumTrackCoordinate, world.bodies[0]._trackContact?.distance ?? 0)
+      maximumEnergyError = Math.max(maximumEnergyError, Math.abs(world.energyError.percent))
+    })
+    expect(maximumTrackCoordinate).toBeGreaterThan(trackLength * 0.85)
+    expect(maximumEnergyError).toBeLessThan(2)
+  })
+
+  it('lets a zero-friction wheel slide through an ideal valley without hidden rolling torque', () => {
+    const scenario = getPreset('projectile-motion')
+    const track = createSplineTrack({ id: 'valley', template: 'valley', ideal: true, friction: 0.8, restitution: 0 })
+    const release = splinePointAtDistance(track, 0)
+    const wheel = createWheel({
+      id: 'wheel',
+      radius: 0.45,
+      friction: 0,
+      restitution: 0,
+      position: { x: release.position.x + release.normal.x * 0.45, y: release.position.y + release.normal.y * 0.45 },
+    })
+    scenario.constraints = []
+    scenario.tracks = [track]
+    scenario.bodies = [wheel]
+    let maximumTrackCoordinate = 0
+    let maximumAngularSpeed = 0
+    run(createWorld(scenario), 8, (world) => {
+      maximumTrackCoordinate = Math.max(maximumTrackCoordinate, world.bodies[0]._trackContact?.distance ?? 0)
+      maximumAngularSpeed = Math.max(maximumAngularSpeed, Math.abs(world.bodies[0].angularVelocity))
+    })
+    expect(maximumTrackCoordinate).toBeGreaterThan(splineLength(track) * 0.8)
+    expect(maximumAngularSpeed).toBeLessThan(1e-8)
   })
 })

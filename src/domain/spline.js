@@ -141,6 +141,28 @@ export function createSplineKnot(overrides = {}) {
   }
 }
 
+export function autoCompleteSplineKnots(knots) {
+  if (!Array.isArray(knots) || knots.length < 2) return (knots ?? []).map((k) => createSplineKnot(k))
+  return knots.map((knot, i) => {
+    const created = createSplineKnot(knot)
+    const prev = knots[Math.max(0, i - 1)]
+    const next = knots[Math.min(knots.length - 1, i + 1)]
+    const prevPos = prev.position ?? { x: 0, y: 0 }
+    const nextPos = next.position ?? { x: 0, y: 0 }
+    const autoTangent = scale(subtract(nextPos, prevPos), 0.5)
+    const hasExplicitTangent = isFiniteVector(knot.tangent) && (knot.tangent.x !== 2 || knot.tangent.y !== 0) && magnitude(knot.tangent) >= 0.01
+    const tangent = hasExplicitTangent ? knot.tangent : magnitude(autoTangent) > 0.01 ? autoTangent : { x: 2, y: 0 }
+    const autoSecondDeriv = subtract(add(nextPos, prevPos), scale(created.position, 2))
+    const hasExplicitSecondDeriv = isFiniteVector(knot.secondDerivative) && (knot.secondDerivative.x !== 0 || knot.secondDerivative.y !== 0)
+    const secondDerivative = hasExplicitSecondDeriv ? knot.secondDerivative : autoSecondDeriv
+    return {
+      ...created,
+      tangent,
+      secondDerivative,
+    }
+  })
+}
+
 export function validateSplineTrack(track) {
   const errors = []
   if (!(Number.isFinite(track.thickness) && track.thickness > 0)) errors.push('Spline thickness must be positive.')
@@ -156,14 +178,14 @@ export function validateSplineTrack(track) {
     if ([knot.position, knot.tangent, knot.secondDerivative].some((value) => isFiniteVector(value) && Math.max(Math.abs(value.x), Math.abs(value.y)) > 100)) errors.push(`Spline knot ${knot.id ?? 'unknown'} exceeds the 100-unit geometry bound.`)
   }
   for (let index = 1; index < track.knots.length; index += 1) {
-    if (magnitude(subtract(track.knots[index].position, track.knots[index - 1].position)) < 0.01) errors.push(`Spline span ${index} has coincident endpoints.`)
+    if (magnitude(subtract(track.knots[index].position, track.knots[index - 1].position)) < 0.0001) errors.push(`Spline span ${index} has coincident endpoints.`)
   }
   if (!['left', 'right'].includes(track.supportSide)) errors.push('Spline supportSide must be left or right.')
   if (!errors.length && !(splineLength(track) > 0.05)) errors.push('Spline track must have positive length.')
   return errors
 }
 
-function circleKnot(id, center, radius, theta, span = Math.PI / 2) {
+export function circleKnot(id, center, radius, theta, span = Math.PI / 2) {
   return createSplineKnot({
     id,
     position: { x: center.x + radius * Math.cos(theta), y: center.y + radius * Math.sin(theta) },
@@ -172,9 +194,120 @@ function circleKnot(id, center, radius, theta, span = Math.PI / 2) {
   })
 }
 
+export function compileFeatures(features) {
+  if (!Array.isArray(features) || features.length === 0) return []
+  const knots = []
+  let knotIndex = 0
+
+  features.forEach((feature, fIndex) => {
+    if (feature.type === 'release') {
+      const pos = feature.position ?? { x: -7.5, y: 6 }
+      const nextFeature = features[fIndex + 1]
+      let nextPos = null
+      if (nextFeature) {
+        if (nextFeature.type === 'loop' && nextFeature.center) {
+          const r = nextFeature.radius ?? 1
+          nextPos = { x: nextFeature.center.x - r, y: nextFeature.center.y - r }
+        } else if (nextFeature.position) {
+          nextPos = nextFeature.position
+        }
+      }
+      const dx = nextPos ? nextPos.x - pos.x : 4
+      const dy = nextPos ? nextPos.y - pos.y : -4
+      const tangent = { x: dx > 0 ? dx * 0.6 : 4, y: dy }
+      knots.push(createSplineKnot({
+        id: `feat-release-${knotIndex++}`,
+        position: pos,
+        tangent,
+        secondDerivative: { x: 0, y: 0 },
+      }))
+    } else if (feature.type === 'loop') {
+      const r = feature.radius ?? 1
+      const center = feature.center ?? { x: 0, y: r }
+      const bottomIn = circleKnot(`feat-loop-in-${knotIndex++}`, center, r, -Math.PI / 2)
+      const right = circleKnot(`feat-loop-right-${knotIndex++}`, center, r, 0)
+      const top = circleKnot(`feat-loop-top-${knotIndex++}`, center, r, Math.PI / 2)
+      const left = circleKnot(`feat-loop-left-${knotIndex++}`, center, r, Math.PI)
+      const bottomOut = circleKnot(`feat-loop-out-${knotIndex++}`, center, r, 3 * Math.PI / 2)
+      knots.push(bottomIn, right, top, left, bottomOut)
+    } else if (feature.type === 'ramp') {
+      const pos = feature.position ?? { x: 0, y: 0 }
+      knots.push(createSplineKnot({
+        id: `feat-ramp-${knotIndex++}`,
+        position: pos,
+      }))
+    } else if (feature.type === 'hill') {
+      const pos = feature.position ?? { x: 0, y: 3 }
+      const r = feature.radius ?? 2
+      knots.push(createSplineKnot({
+        id: `feat-hill-${knotIndex++}`,
+        position: pos,
+        tangent: { x: 3, y: 0 },
+        secondDerivative: { x: 0, y: -2 * r },
+      }))
+    } else if (feature.type === 'valley') {
+      const pos = feature.position ?? { x: 0, y: 0 }
+      const r = feature.radius ?? 2
+      knots.push(createSplineKnot({
+        id: `feat-valley-${knotIndex++}`,
+        position: pos,
+        tangent: { x: 3, y: 0 },
+        secondDerivative: { x: 0, y: 2 * r },
+      }))
+    } else if (feature.type === 'runout') {
+      const pos = feature.position ?? { x: 7.5, y: 0 }
+      knots.push(createSplineKnot({
+        id: `feat-runout-${knotIndex++}`,
+        position: pos,
+        tangent: { x: 4, y: 0 },
+        secondDerivative: { x: 0, y: 0 },
+      }))
+    }
+  })
+
+  const completed = autoCompleteSplineKnots(knots)
+  const uniqueKnots = []
+  completed.forEach((knot) => {
+    if (uniqueKnots.length === 0) {
+      uniqueKnots.push(knot)
+    } else {
+      const prev = uniqueKnots[uniqueKnots.length - 1]
+      const dist = Math.hypot(knot.position.x - prev.position.x, knot.position.y - prev.position.y)
+      if (dist >= 0.01) {
+        uniqueKnots.push(knot)
+      } else if (knot.tangent && !prev.tangent) {
+        uniqueKnots[uniqueKnots.length - 1] = knot
+      }
+    }
+  })
+  return uniqueKnots
+}
+
 export function splineTemplate(kind = 'blank', options = {}) {
   const origin = options.origin ?? { x: 0, y: 0 }
   const radius = options.radius ?? 2
+  if (kind === 'double-loop') {
+    const loopRadius = options.radius ?? 1
+    const center1 = { x: origin.x - 2.5, y: origin.y + loopRadius }
+    const center2 = { x: origin.x + 3.5, y: origin.y + 2 * loopRadius + loopRadius }
+    const bottom1 = circleKnot('loop1-bottom-in', center1, loopRadius, -Math.PI / 2)
+    const bottom2 = circleKnot('loop2-bottom-in', center2, loopRadius, -Math.PI / 2)
+    return [
+      createSplineKnot({ id: 'loop-release', position: { x: origin.x - 7.5, y: origin.y + 6 * loopRadius }, tangent: { x: 5, y: -4 }, secondDerivative: bottom1.secondDerivative }),
+      bottom1,
+      circleKnot('loop1-right', center1, loopRadius, 0),
+      circleKnot('loop1-top', center1, loopRadius, Math.PI / 2),
+      circleKnot('loop1-left', center1, loopRadius, Math.PI),
+      circleKnot('loop1-bottom-out', center1, loopRadius, 3 * Math.PI / 2),
+      createSplineKnot({ id: 'loop-mid-ramp', position: { x: origin.x + 0.5, y: origin.y + loopRadius }, tangent: { x: 4, y: 1 }, secondDerivative: { x: 0, y: 0 } }),
+      bottom2,
+      circleKnot('loop2-right', center2, loopRadius, 0),
+      circleKnot('loop2-top', center2, loopRadius, Math.PI / 2),
+      circleKnot('loop2-left', center2, loopRadius, Math.PI),
+      circleKnot('loop2-bottom-out', center2, loopRadius, 3 * Math.PI / 2),
+      createSplineKnot({ id: 'loop-exit', position: { x: origin.x + 7.5, y: origin.y + 2 * loopRadius }, tangent: { x: 4, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
+    ]
+  }
   if (kind === 'loop') {
     const center = { x: origin.x + 1.5, y: origin.y + radius }
     const bottom = circleKnot('loop-bottom-in', center, radius, -Math.PI / 2)

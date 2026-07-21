@@ -25,6 +25,43 @@ function crossings(scenario, seconds, sample) {
 }
 
 describe('planar mechanics world', () => {
+  it('detaches unattached push-only springs at rest length', () => {
+    const scenario = {
+      id: 'push-spring-test',
+      bodies: [createBody({ id: 'mass', mass: 2, position: { x: -1, y: 0 }, velocity: { x: 0, y: 0 } })],
+      connectors: [createConnector('spring', { id: 'spring-push', a: { type: 'world', position: { x: -2, y: 0 } }, b: { type: 'port', ownerId: 'mass', portId: 'mass:center' }, restLength: 1.5, stiffness: 100, unattached: true })],
+      gravity: { enabled: false },
+    }
+    let world = createWorld(scenario)
+    // Initially compressed at restLength=1.5, position x=-1 => length=1.0, extension = -0.5
+    world = run(world, 0.5)
+    // Mass should be pushed right and separate when length >= 1.5
+    expect(world.bodies[0].position.x).toBeGreaterThan(0)
+    // State of spring at extension > 0 should yield 0 force
+    const springState = connectorState(world, world.connectors[0])
+    expect(springState.force).toBe(0)
+  })
+
+  it('executes mid-air explosion event conserving momentum', () => {
+    const scenario = {
+      id: 'explosion-test',
+      bodies: [createBody({ id: 'projectile', mass: 4, position: { x: 0, y: 10 }, velocity: { x: 10, y: 0 } })],
+      events: [{ id: 'evt-1', trigger: 'time', time: 0.1, type: 'explosion', targetId: 'projectile', ratio: 0.25, impulseX: 6 }],
+      gravity: { enabled: false },
+    }
+    let world = createWorld(scenario)
+    world = run(world, 0.2)
+    // Projectile should split into Q (mass 1) and R (mass 3)
+    expect(world.bodies.length).toBe(2)
+    const pieceQ = world.bodies.find((b) => b.name.includes('Q'))
+    const pieceR = world.bodies.find((b) => b.name.includes('R'))
+    expect(pieceQ.mass).toBe(1)
+    expect(pieceR.mass).toBe(3)
+    // Momentum conservation: 1 * vQx + 3 * vRx = 4 * 10 = 40
+    const totalPx = pieceQ.mass * pieceQ.velocity.x + pieceR.mass * pieceR.velocity.x
+    expect(totalPx).toBeCloseTo(40, 5)
+  })
+
   it('keeps custom attachment points mounted through owner translation and rotation', () => {
     const scenario = getPreset('projectile-motion')
     const owner = scenario.bodies[0]

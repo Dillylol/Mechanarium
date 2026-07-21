@@ -1,5 +1,5 @@
 import { add, dot, magnitude, normalize, scale, subtract } from './vector.js'
-import { sampleSpline } from '../domain/spline.js'
+import { sampleSpline, splinePointAtDistance } from '../domain/spline.js'
 
 export function constrainAcceleration(_body, acceleration) { return acceleration }
 
@@ -13,7 +13,34 @@ function supportRadius(body, normal) {
   return Math.abs(normal.x) * body.width / 2 + Math.abs(normal.y) * body.height / 2
 }
 
-function contactWithSurface(body, surface, dt) {
+const contactFriction = (body, surface) => Math.min(1, Math.max(0, Math.sqrt(Math.max(0, body.friction ?? 0) * Math.max(0, surface.friction ?? 0))))
+
+function idealRailCorrection(original, corrected, surface, tangent, gravity) {
+  if (!surface.ideal || !gravity?.enabled || !['circle', 'wheel'].includes(corrected.shape)) return corrected
+  const directionLength = Math.hypot(gravity.direction.x, gravity.direction.y) || 1
+  const gravityDirection = { x: gravity.direction.x / directionLength, y: gravity.direction.y / directionLength }
+  const potential = (candidate) => -candidate.mass * gravity.g * candidate.gravityMultiplier * dot(candidate.position, gravityDirection)
+  const inertia = corrected.assemblyInertia ?? corrected.inertia ?? 0
+  const kinetic = (candidate) => 0.5 * candidate.mass * dot(candidate.velocity, candidate.velocity) + 0.5 * inertia * candidate.angularVelocity ** 2
+  const railEnergy = Number.isFinite(original._railEnergy) ? original._railEnergy : potential(original) + kinetic(original)
+  const rolling = corrected.shape === 'wheel' && corrected.rotationMode === 'free' && contactFriction(corrected, surface) > 1e-6
+  const preservedRotational = rolling ? 0 : 0.5 * inertia * corrected.angularVelocity ** 2
+  const availableKinetic = Math.max(0, railEnergy - potential(corrected) - preservedRotational)
+  const effectiveMass = corrected.mass + (rolling ? inertia / corrected.radius ** 2 : 0)
+  const speed = Math.sqrt(2 * availableKinetic / Math.max(effectiveMass, 1e-9))
+  const tangentSpeed = dot(corrected.velocity, tangent)
+  const gravityAlong = dot(gravityDirection, tangent)
+  const travelDirection = Math.sign(tangentSpeed) || original._railDirection || Math.sign(gravityAlong) || 1
+  return {
+    ...corrected,
+    velocity: scale(tangent, travelDirection * speed),
+    angularVelocity: rolling ? -travelDirection * speed / corrected.radius : corrected.angularVelocity,
+    _railEnergy: railEnergy,
+    _railDirection: travelDirection,
+  }
+}
+
+function contactWithSurface(body, surface, dt, gravity) {
   const tangent = { x: Math.cos(surface.angle), y: Math.sin(surface.angle) }
   const normal = { x: -tangent.y, y: tangent.x }
   const topCenter = add(surface.center, scale(normal, surface.thickness / 2))
@@ -29,14 +56,14 @@ function contactWithSurface(body, surface, dt) {
   const velocityNormal = dot(body.velocity, normal)
   const velocityTangent = dot(body.velocity, tangent)
   const restitution = surface.restitution ?? body.restitution ?? 0
-  const friction = Math.min(1, Math.max(0, surface.friction ?? body.friction ?? 0))
+  const friction = contactFriction(body, surface)
   const normalVelocity = velocityNormal < 0 ? -velocityNormal * restitution : velocityNormal
   const normalImpulseSpeed = velocityNormal < 0 ? -(1 + restitution) * velocityNormal : 0
   const normalImpulse = body.mass * normalImpulseSpeed
   let frictionImpulse
   let tangentVelocity = velocityTangent
   let angularVelocity = body.angularVelocity
-  if (body.shape === 'wheel') {
+  if (body.shape === 'wheel' && body.rotationMode !== 'sliding') {
     const inverseInertia = body.rotationMode === 'fixed' ? 0 : 1 / Math.max(body.assemblyInertia ?? body.inertia, 1e-9)
     const contactSpeed = velocityTangent + body.angularVelocity * body.radius
     const effectiveInverseMass = 1 / body.mass + body.radius ** 2 * inverseInertia
@@ -55,19 +82,23 @@ function contactWithSurface(body, surface, dt) {
   const contactLoads = [...(body._contactLoads ?? [])]
   if (normalImpulse > 0) contactLoads.push({ kind: 'normal', sourceId: surface.id ?? 'surface', point, force: scale(normal, normalImpulse / dt) })
   if (Math.abs(frictionImpulse) > 0) contactLoads.push({ kind: 'friction', sourceId: surface.id ?? 'surface', point, force: scale(tangent, frictionImpulse / dt) })
-  return {
+  const corrected = {
     ...body,
     position: add(body.position, scale(normal, penetration)),
     velocity: add(scale(tangent, tangentVelocity), scale(normal, normalVelocity)),
     angularVelocity,
     _contactLoads: contactLoads,
   }
+  return idealRailCorrection(body, corrected, surface, tangent, gravity)
 }
 
 function splineSurfaceCandidates(body, track) {
   const samples = track._samples ?? sampleSpline(track)
   const candidates = []
-  for (let index = 1; index < samples.length; index += 1) {
+  const priorIndex = body._trackContact?.trackId === track.id ? body._trackContact.sampleIndex : null
+  const startIndex = priorIndex === null ? 1 : Math.max(1, priorIndex - 8)
+  const endIndex = priorIndex === null ? samples.length - 1 : Math.min(samples.length - 1, priorIndex + 8)
+  for (let index = startIndex; index <= endIndex; index += 1) {
     const a = samples[index - 1]
     const b = samples[index]
     const delta = subtract(b.position, a.position)
@@ -82,8 +113,7 @@ function splineSurfaceCandidates(body, track) {
     const radius = supportRadius(body, normal)
     const signedDistance = dot(relative, normal)
     if (Math.abs(along) > length / 2 + radius * 0.35 || signedDistance < -track.thickness - radius * 0.6 || signedDistance > radius * 1.75) continue
-    const priorIndex = body._trackContact?.trackId === track.id ? body._trackContact.sampleIndex : null
-    const continuityPenalty = priorIndex === null ? 0 : Math.min(Math.abs(index - priorIndex), 20) * 0.04
+    const continuityPenalty = priorIndex === null ? 0 : Math.abs(index - priorIndex) * 0.04
     candidates.push({
       score: Math.abs(radius - signedDistance) + continuityPenalty,
       index,
@@ -102,31 +132,103 @@ function splineSurfaceCandidates(body, track) {
   return candidates.sort((left, right) => left.score - right.score)
 }
 
-function contactWithSpline(body, track, dt) {
+function followIdealSpline(body, track, dt, gravity) {
+  if (!track.ideal || body._trackContact?.trackId !== track.id) return null
+  if (body._contactLoads?.some((load) => load.sourceId === track.id)) return body
+  const prior = body._trackContact
+  const tangentSpeed = dot(body.velocity, prior.tangent)
+  const requestedDistance = prior.distance + tangentSpeed * dt
+  const samples = track._samples ?? sampleSpline(track)
+  const trackLength = samples.at(-1)?.distance ?? 0
+  if (requestedDistance < 0 || requestedDistance > trackLength) return { ...body, _trackContact: null }
+  const point = splinePointAtDistance(track, requestedDistance)
+  if (!point) return { ...body, _trackContact: null }
+  const radius = supportRadius(body, point.normal)
+  const constrained = idealRailCorrection(body, {
+    ...body,
+    position: add(point.position, scale(point.normal, radius)),
+    _trackContact: {
+      trackId: track.id,
+      sampleIndex: point.sampleIndex,
+      distance: point.distance,
+      tangent: point.tangent,
+      normal: point.normal,
+      curvature: point.curvature,
+      gap: 0,
+    },
+  }, track, point.tangent, gravity)
+  const speed = Math.abs(dot(constrained.velocity, point.tangent))
+  const gravityDirectionLength = Math.hypot(gravity.direction.x, gravity.direction.y) || 1
+  const gravityAcceleration = scale(gravity.direction, gravity.g * body.gravityMultiplier / gravityDirectionLength)
+  const normalForce = body.mass * (speed ** 2 * point.curvature - dot(gravityAcceleration, point.normal))
+  const isApexDetachment = point.normal.y < 0.2 && dot(body.velocity, point.normal) > 0
+  if ((!track.ideal || isApexDetachment) && normalForce < -1e-6) return { ...body, _trackContact: null }
+  const contactPoint = add(constrained.position, scale(point.normal, -radius))
+  return {
+    ...constrained,
+    _contactLoads: [...(body._contactLoads ?? []), { kind: 'normal', sourceId: track.id, point: contactPoint, force: scale(point.normal, Math.max(0, normalForce)) }],
+  }
+}
+
+function contactWithSpline(body, track, dt, gravity) {
+  const followed = followIdealSpline(body, track, dt, gravity)
+  if (followed) return followed
   const candidate = splineSurfaceCandidates(body, track)[0]
-  const alreadyContacted = body._contactLoads?.some((load) => load.sourceId === track.id)
-  if (!candidate) return !alreadyContacted && body._trackContact?.trackId === track.id ? { ...body, _trackContact: null } : body
-  const contacted = contactWithSurface(body, candidate.surface, dt)
+  if (!candidate) return body._trackContact?.trackId === track.id ? { ...body, _trackContact: null } : body
+  const contacted = contactWithSurface(body, candidate.surface, dt, gravity)
   const changed = contacted !== body
   if (changed) return { ...contacted, _trackContact: candidate.contact }
-  if (alreadyContacted) return body
   if (body._trackContact?.trackId === track.id && Math.abs(candidate.contact.gap) < 0.03) return { ...body, _trackContact: candidate.contact }
   return body._trackContact?.trackId === track.id ? { ...body, _trackContact: null } : body
 }
 
-function applyGround(body, ground, dt) {
-  return contactWithSurface(body, { ...ground, center: { x: body.position.x, y: ground.y }, angle: 0, length: 1e6, thickness: 0 }, dt)
+function applyGround(body, ground, dt, gravity) {
+  return contactWithSurface(body, { ...ground, center: { x: body.position.x, y: ground.y }, angle: 0, length: 1e6, thickness: 0 }, dt, gravity)
+}
+
+function seedJoinedSplineContact(body, world) {
+  const supportingRailId = body._contactLoads?.find((load) => load.kind === 'normal')?.sourceId
+  if (!supportingRailId || body._trackContact) return body
+  for (const join of world.railJoins ?? []) {
+    const source = join.a.ownerId === supportingRailId ? join.a : join.b.ownerId === supportingRailId ? join.b : null
+    const target = source === join.a ? join.b : source === join.b ? join.a : null
+    const spline = target && world.tracks.find((track) => track.id === target.ownerId && track.type === 'spline')
+    if (!source || !spline) continue
+    const samples = spline._samples ?? sampleSpline(spline)
+    const distance = target.endpoint === 'start' ? 0 : samples.at(-1)?.distance ?? 0
+    const point = splinePointAtDistance(spline, distance)
+    if (!point) continue
+    const radius = supportRadius(body, point.normal)
+    const expectedCenter = add(point.position, scale(point.normal, radius))
+    if (magnitude(subtract(body.position, expectedCenter)) > Math.max(0.45, radius * 1.8)) continue
+    const inwardTangent = target.endpoint === 'start' ? point.tangent : scale(point.tangent, -1)
+    if (dot(body.velocity, inwardTangent) <= 0) continue
+    return {
+      ...body,
+      _trackContact: {
+        trackId: spline.id,
+        sampleIndex: point.sampleIndex,
+        distance: point.distance,
+        tangent: point.tangent,
+        normal: point.normal,
+        curvature: point.curvature,
+        gap: 0,
+      },
+    }
+  }
+  return body
 }
 
 export function applyWorldContacts(body, world, dt = world.fixedStep) {
   let current = body
-  for (const ground of world.constraints.filter((constraint) => constraint.type === 'ground')) current = applyGround(current, ground, dt)
+  for (const ground of world.constraints.filter((constraint) => constraint.type === 'ground')) current = applyGround(current, ground, dt, world.gravity)
   const surfaces = [
     ...world.tracks.filter((track) => track.type === 'segment'),
     ...world.bodies.filter((candidate) => candidate.shape === 'beam' && candidate.mode === 'track').map((beam) => ({ ...beam, center: beam.position })),
   ]
-  for (const surface of surfaces) current = contactWithSurface(current, surface, dt)
-  for (const track of world.tracks.filter((candidate) => candidate.type === 'spline')) current = contactWithSpline(current, track, dt)
+  for (const surface of surfaces) current = contactWithSurface(current, surface, dt, world.gravity)
+  current = seedJoinedSplineContact(current, world)
+  for (const track of world.tracks.filter((candidate) => candidate.type === 'spline')) current = contactWithSpline(current, track, dt, world.gravity)
   return current
 }
 

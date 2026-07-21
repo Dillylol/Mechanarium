@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { getPreset } from '../domain/presets.js'
+import { createWorld } from '../physics/world.js'
+import { describeWorld } from './describeWorld.js'
 import { planWorldLocally } from './worldAgent.js'
 
 describe('local world planner', () => {
@@ -18,6 +21,11 @@ describe('local world planner', () => {
 
   it('can explicitly remove the floor constraint', () => {
     expect(planWorldLocally('Turn off the floor').actions[0]).toMatchObject({ type: 'remove_constraint', target: 'floor' })
+  })
+
+  it('distinguishes a paired photogate assembly from a manual gate', () => {
+    expect(planWorldLocally('Add a photogate assembly').actions[0]).toMatchObject({ type: 'add_instrument', target: 'photogateAssembly' })
+    expect(planWorldLocally('Add a photogate').actions[0]).toMatchObject({ type: 'add_instrument', target: 'photogate' })
   })
 
   it('asks for a supported construction when intent is unclear', () => {
@@ -58,8 +66,46 @@ describe('local world planner', () => {
     const first = planWorldLocally('A 2 kg block is launched at 5 m/s. Find its momentum?')
     expect(first.tutorial.stage).toBe('identify-knowns')
     expect(first.message).toMatch(/list the known/i)
-    const worked = planWorldLocally('I am stuck, show the worked solution', { telemetry: { tutor: first.tutorial } })
+    const worked = planWorldLocally('I am stuck, show the worked solution')
     expect(worked.tutorial.stage).toBe('worked-solution')
     expect(worked.message).toMatch(/worked approach/i)
+  })
+
+  it('prefers building a collision lab over problem scaffolding', () => {
+    const plan = planWorldLocally('Build a 1D momentum-collision lab with disks R and S, a ruler, and a photogate. Do not solve yet.')
+    expect(plan.tutorial).toBeUndefined()
+    expect(plan.proposal.actions).toEqual(expect.arrayContaining([
+      { type: 'load_preset', target: 'momentum-collision' },
+      { type: 'add_instrument', target: 'ruler' },
+      { type: 'add_instrument', target: 'photogateAssembly' },
+    ]))
+  })
+
+  it('explains the current world in detail offline without proposing actions', () => {
+    const scenario = getPreset('momentum-collision')
+    const world = createWorld(scenario)
+    const worldDescription = describeWorld({ scenario, world, selectedBody: world.bodies[1], notebook: { trials: [] } })
+    const plan = planWorldLocally('Give me a detailed description of every entity in the current world', {
+      telemetry: { world_description: worldDescription },
+    })
+
+    expect(plan.actions).toEqual([])
+    expect(plan.message).toContain('Cart A')
+    expect(plan.message).toContain('Cart B')
+    expect(plan.message).toContain('Observation')
+    expect(plan.message).toContain('Inference')
+    expect(plan.message.length).toBeGreaterThan(400)
+  })
+
+  it('explains the selected body offline with forces, energy, and contact', () => {
+    const scenario = getPreset('projectile-motion')
+    const world = createWorld(scenario)
+    const worldDescription = describeWorld({ scenario, world, selectedBody: world.bodies[0], notebook: { trials: [] } })
+    const plan = planWorldLocally('Explain the selected body', { telemetry: { world_description: worldDescription } })
+
+    expect(plan.actions).toEqual([])
+    expect(plan.message).toMatch(/velocity/i)
+    expect(plan.message).toMatch(/net force/i)
+    expect(plan.message).toMatch(/kinetic energy/i)
   })
 })

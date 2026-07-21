@@ -1,6 +1,7 @@
 import { INTEGRATORS } from '../physics/constants.js'
 import { cloneScenario, createBody, createConnector, createSplineTrack, createTrack, createWheel, migrateScenario, SCENARIO_VERSION } from './scenario.js'
-import { createSplineKnot } from './spline.js'
+import { createInstrument } from './instruments.js'
+import { createSplineKnot, splinePointAtDistance } from './spline.js'
 
 const common = {
   version: 1,
@@ -9,6 +10,42 @@ const common = {
   bounds: { minX: -8, maxX: 8, minY: -4.5, maxY: 7.5 },
   duration: 20,
 }
+
+const rollingTrack = createTrack({
+  id: 'rolling-ramp',
+  name: 'Rolling incline',
+  center: { x: 0, y: 1 },
+  angle: Math.atan2(-6, 11),
+  length: Math.hypot(11, 6),
+  thickness: 0.16,
+  friction: 0.9,
+  restitution: 0,
+  ideal: true,
+})
+const rollingTangent = { x: Math.cos(rollingTrack.angle), y: Math.sin(rollingTrack.angle) }
+const rollingNormal = { x: -rollingTangent.y, y: rollingTangent.x }
+const rollingStart = {
+  x: rollingTrack.center.x - rollingTangent.x * rollingTrack.length / 2 + rollingNormal.x * (rollingTrack.thickness / 2 + 0.5),
+  y: rollingTrack.center.y - rollingTangent.y * rollingTrack.length / 2 + rollingNormal.y * (rollingTrack.thickness / 2 + 0.5),
+}
+
+const coasterTrack = createSplineTrack({
+  id: 'coaster-track', name: 'Editable coaster', friction: 0.9, restitution: 0, ideal: true,
+  knots: [
+    createSplineKnot({ id: 'coaster-release', position: { x: -7, y: 5.4 }, tangent: { x: 3.5, y: -2.5 }, secondDerivative: { x: 0, y: 0 } }),
+    createSplineKnot({ id: 'coaster-valley-a', position: { x: -3.5, y: -1.3 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 5 } }),
+    createSplineKnot({ id: 'coaster-hill', position: { x: 0, y: 2.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: -4 } }),
+    createSplineKnot({ id: 'coaster-valley-b', position: { x: 3.3, y: -0.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 4 } }),
+    createSplineKnot({ id: 'coaster-finish', position: { x: 7, y: 1.1 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
+  ],
+})
+const coasterRelease = splinePointAtDistance(coasterTrack, 0)
+const coasterPosition = {
+  x: coasterRelease.position.x + coasterRelease.normal.x * 0.3,
+  y: coasterRelease.position.y + coasterRelease.normal.y * 0.3,
+}
+
+
 
 const presets = [
   {
@@ -38,14 +75,21 @@ const presets = [
   },
   {
     ...common,
+    version: SCENARIO_VERSION,
     id: 'rolling-incline',
     name: 'Rolling Incline',
     category: 'Rotation',
     description: 'Track translation and rotation for a cylinder rolling without slipping.',
     lesson: 'Static friction couples translational acceleration to angular acceleration.',
-    bodies: [createBody({ id: 'roller', name: 'Solid cylinder', radius: 0.5, position: { x: -5, y: 3.85 }, color: '#ffcf5c' })],
-    forces: [{ id: 'earth-gravity', type: 'gravity', g: 9.80665 }],
-    constraints: [{ id: 'ramp', type: 'incline', bodyId: 'roller', start: { x: -5.5, y: 4 }, end: { x: 5.5, y: -2 }, rolling: true }],
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [createWheel({ id: 'roller', name: 'Solid cylinder', mass: 1, radius: 0.5, inertiaModel: 'disk', position: rollingStart, friction: 0.9, restitution: 0, color: '#ffcf5c' })],
+    tracks: [rollingTrack],
+    instruments: [
+      createInstrument('ruler', { id: 'rolling-ruler', name: 'Incline distance', a: { x: -5.5, y: 4.7 }, b: { x: 5.5, y: -1.3 } }),
+      createInstrument('photogate', { id: 'rolling-gate-a', name: 'Photogate assembly A', center: { x: -2.5, y: 2.75 }, angle: rollingTrack.angle + Math.PI / 2, targetBodyId: 'roller', pairId: 'rolling-gate-pair', pairRole: 'A', nominalSpacing: 3, trackId: 'rolling-ramp', trackDistance: 3 }),
+      createInstrument('photogate', { id: 'rolling-gate-b', name: 'Photogate assembly B', center: { x: 0.13, y: 1.31 }, angle: rollingTrack.angle + Math.PI / 2, targetBodyId: 'roller', pairId: 'rolling-gate-pair', pairRole: 'B', nominalSpacing: 3, trackId: 'rolling-ramp', trackDistance: 6 }),
+    ],
+    ports: [], joints: [], connectors: [], forces: [], constraints: [],
   },
   {
     ...common,
@@ -81,6 +125,72 @@ const presets = [
     bodies: [createBody({ id: 'incline-mass', name: 'Oscillator mass', mass: 1, radius: 0.42, position: { x: 0.483, y: 0.718 }, color: '#f2cf00' })],
     tracks: [createTrack({ id: 'incline-track', name: 'Incline', center: { x: 0, y: 0 }, angle: Math.PI / 9, length: 8, friction: 0.01 })],
     connectors: [createConnector('spring', { id: 'incline-spring', a: { type: 'world', position: { x: -2.994, y: -0.547 } }, b: { type: 'port', ownerId: 'incline-mass', portId: 'incline-mass:center' }, restLength: 3.1, stiffness: 9, damping: 0.02 })],
+    ports: [], joints: [], forces: [], constraints: [],
+  },
+  {
+    ...common,
+    version: SCENARIO_VERSION,
+    id: 'spring-ramp-launch',
+    name: 'Spring Launch Ramp',
+    category: 'Work & Energy',
+    description: 'A block of mass 2.0 kg is compressed against an unattached spring on a frictionless surface and launched up an inclined ramp.',
+    lesson: 'Elastic potential energy converts into kinetic energy, then into gravitational potential energy as the block ascends to maximum height h.',
+    gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
+    bodies: [
+      createBody({
+        id: 'block-m',
+        name: 'Sphere (2.0 kg)',
+        shape: 'circle',
+        mass: 2.0,
+        radius: 0.35,
+        position: { x: -2.0, y: -3.25 },
+        friction: 0,
+        restitution: 0,
+        color: '#f2cf00',
+      }),
+    ],
+    connectors: [
+      createConnector('spring', {
+        id: 'launch-spring',
+        name: 'Spring k',
+        a: { type: 'world', position: { x: -4.5, y: -3.3 } },
+        b: { type: 'port', ownerId: 'block-m', portId: 'block-m:center' },
+        restLength: 2.5,
+        stiffness: 800,
+        damping: 0,
+        unattached: true,
+        attached: false,
+        mode: 'push',
+      }),
+    ],
+    tracks: [
+      createSplineTrack({
+        id: 'launch-ramp-track',
+        name: 'Horizontal to Ramp Track',
+        friction: 0,
+        restitution: 0,
+        ideal: true,
+        knots: [
+          createSplineKnot({ id: 'ramp-wall-start', position: { x: -4.5, y: -3.6 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
+          createSplineKnot({ id: 'ramp-flat-mid', position: { x: 0, y: -3.6 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
+          createSplineKnot({ id: 'ramp-curve-up', position: { x: 4, y: 1.0 }, tangent: { x: 2.5, y: 3 }, secondDerivative: { x: -1, y: 1 } }),
+        ],
+      }),
+    ],
+    instruments: [
+      createInstrument('ruler', {
+        id: 'height-ruler',
+        name: 'Ramp Height h',
+        a: { x: 0, y: -3.6 },
+        b: { x: 0, y: 1.0 },
+      }),
+      createInstrument('ruler', {
+        id: 'compression-ruler',
+        name: 'Compression Distance s',
+        a: { x: -4.5, y: -2.7 },
+        b: { x: -2.0, y: -2.7 },
+      }),
+    ],
     ports: [], joints: [], forces: [], constraints: [],
   },
   {
@@ -177,7 +287,7 @@ const presets = [
     lesson: 'The object must retain enough speed at the top for the inward net force to supply centripetal acceleration.',
     gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
     bodies: [createWheel({ id: 'loop-rider', name: 'Rolling disk', mass: 1, radius: 0.28, position: { x: -5.82, y: 6.55 }, inertiaModel: 'disk', friction: 0.75, restitution: 0, color: '#f2cf00' })],
-    tracks: [createSplineTrack({ id: 'loop-track', name: 'Vertical loop', template: 'loop', friction: 0.8, restitution: 0 })],
+    tracks: [createSplineTrack({ id: 'loop-track', name: 'Vertical loop', template: 'loop', friction: 0.8, restitution: 0, ideal: true })],
     ports: [], joints: [], connectors: [], forces: [], constraints: [], instruments: [],
   },
   {
@@ -190,17 +300,8 @@ const presets = [
     description: 'Explore changing speed, curvature, and normal force across a smooth custom track.',
     lesson: 'Height controls the energy budget while local curvature controls the normal force required to follow the rail.',
     gravity: { g: 9.80665, direction: { x: 0, y: -1 }, enabled: true },
-    bodies: [createWheel({ id: 'coaster-car', name: 'Coaster wheel', mass: 1.2, radius: 0.3, position: { x: -6.8, y: 5.7 }, inertiaModel: 'disk', friction: 0.7, restitution: 0, color: '#78e6d5' })],
-    tracks: [createSplineTrack({
-      id: 'coaster-track', name: 'Editable coaster', friction: 0.8, restitution: 0,
-      knots: [
-        createSplineKnot({ id: 'coaster-release', position: { x: -7, y: 5.4 }, tangent: { x: 3.5, y: -2.5 }, secondDerivative: { x: 0, y: 0 } }),
-        createSplineKnot({ id: 'coaster-valley-a', position: { x: -3.5, y: -1.3 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 5 } }),
-        createSplineKnot({ id: 'coaster-hill', position: { x: 0, y: 2.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: -4 } }),
-        createSplineKnot({ id: 'coaster-valley-b', position: { x: 3.3, y: -0.8 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 4 } }),
-        createSplineKnot({ id: 'coaster-finish', position: { x: 7, y: 1.1 }, tangent: { x: 3, y: 0 }, secondDerivative: { x: 0, y: 0 } }),
-      ],
-    })],
+    bodies: [createWheel({ id: 'coaster-car', name: 'Coaster wheel', mass: 1.2, radius: 0.3, position: coasterPosition, inertiaModel: 'disk', friction: 0.9, restitution: 0, color: '#78e6d5' })],
+    tracks: [coasterTrack],
     ports: [], joints: [], connectors: [], forces: [], constraints: [], instruments: [],
   },
 ]

@@ -1,4 +1,4 @@
-import { allPorts, cloneScenario, migrateScenario, SCENARIO_VERSION, validateScenario } from '../domain/scenario.js'
+import { allPorts, cloneScenario, createBody, migrateScenario, SCENARIO_VERSION, validateScenario } from '../domain/scenario.js'
 import { applyCompositeInertia, buildLoadLedger, calibrateRoutedConnectors, connectorLoads, connectorState, solveAssemblyConstraints, wheelCenterMount, wheelRouteGeometry } from './assembly.js'
 import { applyWorldContacts, resolveBeamBodyCollisions, resolveCircleCollisions } from './constraints.js'
 import { netWorldForce, worldPotentialEnergy } from './forces.js'
@@ -69,6 +69,7 @@ export function createWorld(input) {
     bodies,
     forces: source.forces,
     constraints: source.constraints,
+    events: (source.events ?? []).map((event) => ({ ...event, triggered: false })),
     tracks: source.tracks.map((track) => track.type === 'spline' ? { ...track, _samples: sampleSpline(track) } : track),
     instruments: source.instruments,
     ports,
@@ -76,6 +77,7 @@ export function createWorld(input) {
     portIndex: new Map(ports.map((port) => [port.id, port])),
     joints,
     connectors: source.connectors,
+    railJoins: source.railJoins,
     diagnostics: [],
   }
   world = applyCompositeInertia(world)
@@ -86,9 +88,84 @@ export function createWorld(input) {
   return { ...world, initialMetrics: metrics, metrics, energyError: conservationError(metrics.total, metrics.total) }
 }
 
+export function processWorldEvents(world) {
+  if (!world.events || !world.events.length) return world
+  let modified = false
+  let bodies = [...world.bodies]
+  const events = world.events.map((event) => {
+    if (event.triggered) return event
+    const target = bodies.find((b) => b.id === event.targetId)
+    let isTriggered = false
+    if (event.trigger === 'time' && world.time >= (event.time ?? 0)) {
+      isTriggered = true
+    } else if (event.trigger === 'apex' && target) {
+      if (target.velocity.y <= 0.05 && (target._previousVy ?? target.velocity.y) > 0) {
+        isTriggered = true
+      }
+    }
+
+    if (!isTriggered || !target) return event
+
+    modified = true
+    if (event.type === 'impulse') {
+      const impulse = event.impulse ?? { x: 10, y: 0 }
+      bodies = bodies.map((b) => b.id === target.id ? {
+        ...b,
+        velocity: {
+          x: b.velocity.x + impulse.x / b.mass,
+          y: b.velocity.y + impulse.y / b.mass,
+        }
+      } : b)
+    } else if (event.type === 'explosion' || event.type === 'separation') {
+      const totalMass = target.mass
+      const ratio = event.ratio ?? 0.25
+      const massQ = totalMass * ratio
+      const massR = totalMass * (1 - ratio)
+      const impulseX = event.impulseX ?? 5
+
+      const pieceQ = {
+        ...createBody({
+          id: `${target.id}-Q`,
+          name: `${target.name} Q`,
+          mass: massQ,
+          radius: Math.max(0.15, target.radius * Math.cbrt(ratio)),
+          position: { ...target.position },
+          color: '#e63946',
+        }),
+        velocity: {
+          x: target.velocity.x - impulseX / massQ,
+          y: target.velocity.y,
+        },
+      }
+
+      const pieceR = {
+        ...createBody({
+          id: `${target.id}-R`,
+          name: `${target.name} R`,
+          mass: massR,
+          radius: Math.max(0.15, target.radius * Math.cbrt(1 - ratio)),
+          position: { ...target.position },
+          color: '#457b9d',
+        }),
+        velocity: {
+          x: target.velocity.x + impulseX / massR,
+          y: target.velocity.y,
+        },
+      }
+
+      bodies = bodies.filter((b) => b.id !== target.id).concat([pieceQ, pieceR])
+    }
+    return { ...event, triggered: true }
+  })
+
+  bodies = bodies.map((b) => ({ ...b, _previousVy: b.velocity.y }))
+  return { ...world, bodies, events }
+}
+
 function stepWorldOnce(world, dt) {
-  const initialLoads = connectorLoads(world)
-  const predictedBodies = world.bodies.map((body) => {
+  const worldWithEvents = processWorldEvents(world)
+  const initialLoads = connectorLoads(worldWithEvents)
+  const predictedBodies = worldWithEvents.bodies.map((body) => {
     if (body.locked || body.mode === 'track') return body
     const load = initialLoads.get(body.id) ?? { force: { x: 0, y: 0 }, torque: 0 }
     const acceleration = scale(netWorldForce(world, body, load.force), 1 / body.mass)
@@ -124,7 +201,7 @@ function stepWorldOnce(world, dt) {
     }
   })
   let next = { ...world, time: world.time + dt, bodies: resolveBeamBodyCollisions(resolveCircleCollisions(integrated)) }
-  next.bodies = next.bodies.map((body) => body.mode === 'track' ? body : applyWorldContacts(body, next, dt))
+  next.bodies = next.bodies.map((body) => body.mode === 'track' ? body : applyWorldContacts({ ...body, _contactLoads: [] }, next, dt))
   next = solveAssemblyConstraints(next, dt)
   next.bodies = next.bodies.map((body) => body.mode === 'track' ? body : applyWorldContacts(body, next, dt))
   next.bodies = next.bodies.map((body) => {
@@ -172,6 +249,8 @@ export function worldToScenario(world) {
       delete serializedBody._contactLoads
       delete serializedBody._trackContact
       delete serializedBody._previousPosition
+      delete serializedBody._railEnergy
+      delete serializedBody._railDirection
       return serializedBody
     }),
     forces: cloneScenario(world.forces),
@@ -184,12 +263,18 @@ export function worldToScenario(world) {
     instruments: cloneScenario(world.instruments),
     ports: cloneScenario(world.customPorts),
     joints: cloneScenario(world.joints),
+    railJoins: cloneScenario(world.railJoins),
     connectors: cloneScenario(world.connectors).map((connector) => {
       const serialized = { ...connector }
       delete serialized.tension
       delete serialized.tensionA
       delete serialized.tensionB
       delete serialized.routeReference
+      return serialized
+    }),
+    events: cloneScenario(world.events ?? []).map((event) => {
+      const serialized = { ...event }
+      delete serialized.triggered
       return serialized
     }),
   }

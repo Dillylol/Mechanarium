@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Download, Pause, Play, RotateCcw, Save, SkipForward, Upload } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, Pause, Play, Redo2, Rewind, RotateCcw, Save, SkipForward, Undo2, Upload } from 'lucide-react'
 import AgentDock from './components/AgentDock.jsx'
 import BuilderRail from './components/BuilderRail.jsx'
 import DataRail from './components/DataRail.jsx'
@@ -10,14 +10,66 @@ import { deserializeScenario } from './domain/scenario.js'
 import { useSimulation } from './hooks/useSimulation.js'
 import { useTutorials } from './hooks/useTutorials.js'
 
+const WORLD_SAVES_KEY = 'mechanarium:world-saves:v1'
+const LAST_WORLD_KEY = 'mechanarium:last-scenario'
+
+function loadInitialScenario() {
+  try {
+    const stored = localStorage.getItem(LAST_WORLD_KEY)
+    return stored ? deserializeScenario(stored) : 'projectile-motion'
+  } catch {
+    return 'projectile-motion'
+  }
+}
+
+function loadSavedWorlds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WORLD_SAVES_KEY) ?? '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 export default function App() {
-  const simulation = useSimulation()
-  const [overlays, setOverlays] = useState({ grid: true, net: true, components: true, torque: true, trails: false })
+  const simulation = useSimulation(loadInitialScenario)
+  const [overlays, setOverlays] = useState({ grid: true, dimensions: true, height: true, net: true, components: true, torque: true, trails: false })
   const [notice, setNotice] = useState('World ready')
+  const [savedWorlds, setSavedWorlds] = useState(loadSavedWorlds)
   const fileInputRef = useRef(null)
   const presets = listPresets()
-  const { world, selectedBody, selectedEntity } = simulation
+  const { world, selectedBody, selectedEntity, running, selectedId, removeEntity } = simulation
   const tutorials = useTutorials({ world, notebook: simulation.notebook, history: simulation.history })
+
+  useEffect(() => {
+    try { localStorage.setItem(WORLD_SAVES_KEY, JSON.stringify(savedWorlds)) } catch { /* persistence is optional */ }
+  }, [savedWorlds])
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        if (simulation.canUndo) simulation.undo()
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey))) {
+        event.preventDefault()
+        if (simulation.canRedo) simulation.redo()
+        return
+      }
+
+      if (['Delete', 'Backspace'].includes(event.key) && !running && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault()
+        removeEntity(selectedId)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [removeEntity, running, selectedId, simulation])
 
   const updateBody = (changes) => simulation.updateBody(selectedBody.id, changes)
   const moveBody = (bodyId, position, snapRadius) => simulation.moveAssemblyPart(bodyId, position, snapRadius)
@@ -28,8 +80,35 @@ export default function App() {
   }
 
   const saveLocally = () => {
-    localStorage.setItem('mechanarium:last-scenario', scenarioJson(simulation.scenario))
+    localStorage.setItem(LAST_WORLD_KEY, scenarioJson(simulation.scenario))
     setNotice('Saved on this device')
+  }
+
+  const saveNamedWorld = (name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return false
+    const saved = { id: crypto.randomUUID(), name: trimmed, updatedAt: new Date().toISOString(), scenario: simulation.scenario }
+    setSavedWorlds((current) => [saved, ...current.filter((entry) => entry.name !== trimmed)])
+    setNotice(`Saved ${trimmed}`)
+    return true
+  }
+
+  const loadNamedWorld = (id) => {
+    const saved = savedWorlds.find((entry) => entry.id === id)
+    if (!saved) return
+    simulation.replaceScenario(saved.scenario)
+    setNotice(`Loaded ${saved.name}`)
+  }
+
+  const deleteNamedWorld = (id) => {
+    setSavedWorlds((current) => current.filter((entry) => entry.id !== id))
+    setNotice('Deleted saved world')
+  }
+
+  const restartPreset = () => {
+    if (presets.some((preset) => preset.id === world.scenarioId)) simulation.loadPreset(world.scenarioId)
+    else simulation.reset()
+    setNotice('World restarted')
   }
 
   const exportScenario = () => {
@@ -74,8 +153,11 @@ export default function App() {
         <div className="scenario-identity"><small>ACTIVE WORLD</small><strong>{world.name}</strong></div>
         <div className="run-controls" aria-label="Simulation controls">
           <button className="run-button" type="button" onClick={toggleRun}>{simulation.running ? <Pause size={16} /> : <Play size={16} />}<span>{simulation.running ? 'Pause' : 'Run'}</span></button>
-          <button type="button" onClick={simulation.stepOnce} disabled={simulation.running} aria-label="Advance one fixed step"><SkipForward size={16} /></button>
+          <button type="button" onClick={simulation.toggleReverse} disabled={!simulation.canReverse} className={simulation.reversing ? 'active-control' : ''} aria-label="Play simulation in reverse" title={simulation.reversing ? 'Pause reverse playback' : simulation.canReverse ? 'Play simulation in reverse' : 'Run simulation first to enable reverse playback'}><Rewind size={16} /></button>
+          <button type="button" onClick={simulation.stepOnce} disabled={simulation.running || simulation.reversing} aria-label="Advance one fixed step"><SkipForward size={16} /></button>
           <button type="button" onClick={simulation.reset} aria-label="Reset world"><RotateCcw size={16} /></button>
+          <button type="button" onClick={simulation.undo} disabled={!simulation.canUndo || simulation.running || simulation.reversing} aria-label="Undo edit (Ctrl+Z)" title="Undo (Ctrl+Z)"><Undo2 size={16} /></button>
+          <button type="button" onClick={simulation.redo} disabled={!simulation.canRedo || simulation.running || simulation.reversing} aria-label="Redo edit (Ctrl+Y)" title="Redo (Ctrl+Y)"><Redo2 size={16} /></button>
           <label className="speed-select"><span className="visually-hidden">Playback speed</span><select value={simulation.speed} onChange={(event) => simulation.setSpeed(Number(event.target.value))}><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
         </div>
         <div className="file-actions">
@@ -87,13 +169,13 @@ export default function App() {
       </header>
 
       <main className="studio-layout">
-        <BuilderRail presets={presets} activePreset={world.scenarioId} world={world} tutorials={tutorials} onAddElement={simulation.addElement} onLoadPreset={simulation.loadPreset} />
+        <BuilderRail presets={presets} activePreset={world.scenarioId} world={world} tutorials={tutorials} savedWorlds={savedWorlds} onAddElement={simulation.addElement} onLoadPreset={simulation.loadPreset} onReset={simulation.reset} onRestart={restartPreset} onSaveWorld={saveNamedWorld} onLoadWorld={loadNamedWorld} onDeleteWorld={deleteNamedWorld} onImport={() => fileInputRef.current?.click()} onExport={exportScenario} />
 
         <section id="world" className="world-stage" aria-labelledby="world-title">
           <div className="stage-bar">
             <div><p className="micro-label">{presets.find((preset) => preset.id === world.scenarioId)?.category ?? 'Custom system'}</p><h2 id="world-title">{world.name}</h2></div>
             <div className="view-options" aria-label="World overlays">
-              {Object.entries(overlays).map(([name, enabled]) => <label key={name}><input type="checkbox" checked={enabled} onChange={() => toggleOverlay(name)} /><span>{name}</span></label>)}
+              {Object.entries(overlays).map(([name, enabled]) => <label key={name}><input type="checkbox" checked={enabled} onChange={() => toggleOverlay(name)} /><span>{name === 'height' ? 'h indicator' : name}</span></label>)}
             </div>
           </div>
           <div className="scene-shell">
@@ -133,7 +215,7 @@ export default function App() {
                 {simulation.snapProposal && <div className="snap-actions"><button type="button" onClick={simulation.confirmSnap}>Snap to place</button><button type="button" onClick={simulation.cancelSnap}>Keep free</button></div>}
               </div>
             )}
-            <AgentDock scenario={simulation.scenario} world={world} selectedBody={selectedBody} notebook={simulation.notebook} tutorialContext={tutorials.context} onApply={simulation.applyActions} />
+            <AgentDock scenario={simulation.scenario} world={world} selectedEntity={selectedEntity} selectedBody={selectedBody} notebook={simulation.notebook} tutorialContext={tutorials.context} onApply={simulation.applyActions} />
           </div>
         </section>
 

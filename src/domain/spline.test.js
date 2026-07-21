@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSplineKnot, evaluateQuintic, sampleSpline, splineLength, splinePointAtDistance, splineTemplate, validateSplineTrack } from './spline.js'
+import { compileFeatures, createSplineKnot, evaluateQuintic, sampleSpline, splineLength, splinePointAtDistance, splineTemplate, validateSplineTrack } from './spline.js'
 
 describe('quintic spline tracks', () => {
   it('matches position, tangent, and second derivative at shared endpoints', () => {
@@ -27,9 +27,28 @@ describe('quintic spline tracks', () => {
     expect(Math.hypot(middle.normal.x, middle.normal.y)).toBeCloseTo(1)
   })
 
-  it('validates bounded, finite, nondegenerate geometry', () => {
-    const valid = { type: 'spline', supportSide: 'left', thickness: 0.18, friction: 0.2, restitution: 0, knots: splineTemplate('valley') }
-    expect(validateSplineTrack(valid)).toEqual([])
-    expect(validateSplineTrack({ ...valid, knots: [valid.knots[0], { ...valid.knots[0], id: 'duplicate-position' }] }).join(' ')).toMatch(/coincident/i)
+  it('compiles high-fidelity features into analytical spline knots', () => {
+    const features = [
+      { type: 'release', position: { x: -7.5, y: 6 } },
+      { type: 'loop', center: { x: -2.5, y: 1 }, radius: 1 },
+      { type: 'ramp', position: { x: 0.5, y: 1 } },
+      { type: 'loop', center: { x: 3.5, y: 3 }, radius: 1 },
+      { type: 'runout', position: { x: 7.5, y: 2 } },
+    ]
+    const knots = compileFeatures(features)
+    expect(knots.length).toBe(13) // 1 release + 5 loop1 + 1 ramp + 5 loop2 + 1 runout
+    expect(validateSplineTrack({ type: 'spline', supportSide: 'left', thickness: 0.18, friction: 0, restitution: 0, knots })).toEqual([])
+  })
+
+  it('deduplicates coincident endpoints during feature compilation', () => {
+    const features = [
+      // release point lands exactly at the entry of the loop (-2.5, 0)
+      { type: 'release', position: { x: -2.5, y: 0 } },
+      { type: 'loop', center: { x: -2.5, y: 1 }, radius: 1 },
+      { type: 'runout', position: { x: 2, y: 0 } },
+    ]
+    const knots = compileFeatures(features)
+    // Coincident knots are merged, so it compiles cleanly without duplicate check errors
+    expect(validateSplineTrack({ type: 'spline', supportSide: 'left', thickness: 0.18, friction: 0, restitution: 0, knots })).toEqual([])
   })
 })

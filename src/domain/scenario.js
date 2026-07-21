@@ -1,13 +1,14 @@
 import { INTEGRATORS } from '../physics/constants.js'
 import { isFiniteVector } from '../physics/vector.js'
-import { createInstrument, validateInstrument } from './instruments.js'
-import { createSplineKnot, sampleSpline, splinePointAtDistance, splineTemplate, validateSplineTrack } from './spline.js'
+import { createInstrument, validateInstrument, validatePhotogatePairs } from './instruments.js'
+import { validateRailJoins } from './railWeld.js'
+import { autoCompleteSplineKnots, compileFeatures, createSplineKnot, sampleSpline, splinePointAtDistance, splineTemplate, validateSplineTrack } from './spline.js'
 
 export const SCENARIO_VERSION = 4
 export const BODY_SHAPES = Object.freeze(['circle', 'box', 'beam', 'wheel'])
 export const BEAM_MODES = Object.freeze(['dynamic', 'pinned', 'track'])
 export const WHEEL_INERTIA_MODELS = Object.freeze(['disk', 'hoop'])
-export const WHEEL_ROTATION_MODES = Object.freeze(['free', 'fixed'])
+export const WHEEL_ROTATION_MODES = Object.freeze(['free', 'sliding', 'fixed'])
 export const FORCE_TYPES = Object.freeze(['uniform', 'drag', 'central'])
 export const CONSTRAINT_TYPES = Object.freeze(['ground'])
 export const CONNECTOR_TYPES = Object.freeze(['spring', 'rope'])
@@ -49,6 +50,7 @@ export function createBody(overrides = {}) {
     inertiaModel,
     rotationMode: shape === 'wheel' ? (overrides.rotationMode ?? 'free') : undefined,
     autoLength: shape === 'beam' ? (overrides.autoLength ?? false) : undefined,
+    ideal: shape === 'beam' ? (overrides.ideal ?? false) : undefined,
     pinPortId: shape === 'beam' ? (overrides.pinPortId ?? `${id}:center`) : undefined,
     position: overrides.position ?? { x: 0, y: 2 },
     velocity: overrides.velocity ?? { x: 0, y: 0 },
@@ -83,12 +85,16 @@ export function createTrack(overrides = {}) {
     thickness: overrides.thickness ?? 0.18,
     friction: overrides.friction ?? 0.12,
     restitution: overrides.restitution ?? 0.2,
+    ideal: overrides.ideal ?? false,
     startEnd: overrides.startEnd ?? 'start',
   }
 }
 
 export function createSplineTrack(overrides = {}) {
-  const knots = (overrides.knots ?? splineTemplate(overrides.template ?? 'blank')).map((knot) => createSplineKnot(knot))
+  const rawKnots = Array.isArray(overrides.features) && overrides.features.length > 0
+    ? compileFeatures(overrides.features)
+    : (overrides.knots ?? splineTemplate(overrides.template ?? 'blank')).map((knot) => createSplineKnot(knot))
+  const knots = autoCompleteSplineKnots(rawKnots)
   return {
     id: overrides.id ?? `track-${crypto.randomUUID()}`,
     name: overrides.name ?? 'Spline track',
@@ -97,6 +103,7 @@ export function createSplineTrack(overrides = {}) {
     thickness: overrides.thickness ?? 0.18,
     friction: overrides.friction ?? 0.12,
     restitution: overrides.restitution ?? 0.05,
+    ideal: overrides.ideal ?? false,
     startEnd: overrides.startEnd ?? 'start',
     supportSide: overrides.supportSide ?? 'left',
   }
@@ -114,6 +121,7 @@ export function createConnector(type = 'spring', overrides = {}) {
     restLength: overrides.restLength ?? length,
     stiffness: overrides.stiffness ?? 8,
     damping: overrides.damping ?? 0.08,
+    unattached: overrides.unattached ?? (overrides.attached === false) ?? false,
     route: type === 'rope' ? overrides.route : undefined,
   }
 }
@@ -214,14 +222,26 @@ function fromLegacyIncline(constraint) {
 function normalizeV4(input) {
   const scenario = copy(input)
   scenario.version = SCENARIO_VERSION
-  scenario.gravity ??= { g: 9.80665, direction: { x: 0, y: -1 }, enabled: false }
+  scenario.id ??= `scenario-${crypto.randomUUID()}`
+  scenario.name ??= 'Custom Lab'
+  scenario.integrator ??= INTEGRATORS.SYMPLECTIC_EULER
+  scenario.fixedStep ??= 1 / 120
+  scenario.duration ??= 10
+  scenario.bounds ??= { minX: -10, maxX: 10, minY: -2, maxY: 12 }
+  scenario.gravity = {
+    g: input.gravity?.g ?? 9.80665,
+    direction: input.gravity?.direction ?? { x: 0, y: -1 },
+    enabled: input.gravity?.enabled ?? false,
+  }
   scenario.tracks ??= []
   scenario.ports ??= []
   scenario.joints ??= []
   scenario.connectors ??= []
   scenario.instruments ??= []
+  scenario.railJoins ??= []
   scenario.forces ??= []
   scenario.constraints ??= []
+  scenario.events ??= []
   scenario.bodies = (scenario.bodies ?? []).map((body) => createBody(body))
   scenario.tracks = scenario.tracks.map((track) => createTrack(track))
   scenario.connectors = scenario.connectors.map((connector) => createConnector(connector.type, connector))
@@ -231,8 +251,8 @@ function normalizeV4(input) {
 
 export function migrateScenario(input) {
   if (!input || typeof input !== 'object') return input
-  if ([SCENARIO_VERSION, 3, 2].includes(input.version)) return normalizeV4(input)
-  if (input.version !== 1) return copy(input)
+  if (!input.version || [SCENARIO_VERSION, 3, 2].includes(input.version)) return normalizeV4(input)
+  if (input.version !== 1) return normalizeV4(input)
 
   const source = copy(input)
   const masterGravity = source.forces?.find((force) => force.type === 'gravity' && !force.bodyId)
@@ -312,7 +332,9 @@ export function validateScenario(input) {
     if (!instrument.id || ids.has(instrument.id)) errors.push(`Instrument id must be unique: ${instrument.id ?? 'missing'}.`)
     ids.add(instrument.id)
     errors.push(...validateInstrument(instrument, bodyIds))
+    if (instrument.trackId && !scenario.tracks.some((track) => track.id === instrument.trackId)) errors.push(`Instrument ${instrument.id} references unknown track ${instrument.trackId}.`)
   }
+  errors.push(...validatePhotogatePairs(scenario.instruments))
   const ports = allPorts(scenario)
   const portIds = new Set()
   for (const port of ports) {
@@ -356,6 +378,7 @@ export function validateScenario(input) {
       jointPortUsage.add(endpoint.portId)
     }
   }
+  errors.push(...validateRailJoins(scenario))
   return { valid: errors.length === 0, errors, scenario }
 }
 
